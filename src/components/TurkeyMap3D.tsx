@@ -27,6 +27,7 @@ import {
   formatMetricDisplay 
 } from '../data/metricCatalog';
 import { DashboardMode } from './Header';
+import { ThemeMode } from '../utils/theme';
 
 export type { MapMetricType };
 export { computeProvinceMetric };
@@ -44,6 +45,7 @@ interface TurkeyMap3DProps {
   isAutoPlay?: boolean;
   autoPlayProgress?: number;
   autoPlayStepTitle?: string;
+  activeTheme?: ThemeMode;
 }
 
 // Helper to project lon/lat to 3D world coordinates
@@ -408,7 +410,8 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
   onModeChange,
   isAutoPlay = false,
   autoPlayProgress = 0,
-  autoPlayStepTitle
+  autoPlayStepTitle,
+  activeTheme = 'cyber-blue'
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   
@@ -476,11 +479,20 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
   extrudeDepthRef.current = extrudeDepth;
   const extrudeWallColorRef = useRef<ExtrudeWallColorType>(extrudeWallColor);
   extrudeWallColorRef.current = extrudeWallColor;
+  const activeThemeRef = useRef<ThemeMode>(activeTheme);
+  activeThemeRef.current = activeTheme;
 
   // External update handlers
   const updateBaseBeaconsRef = useRef<((metric: MapMetricType, selCode: string) => void) | null>(null);
   const updateHoverBeaconRef = useRef<((code: string | null) => void) | null>(null);
   const updateProvincesVisualRef = useRef<(() => void) | null>(null);
+
+  // Re-render beacons when theme changes
+  useEffect(() => {
+    if (updateBaseBeaconsRef.current) {
+      updateBaseBeaconsRef.current(activeMetric, selectedProvinceCode);
+    }
+  }, [activeTheme]);
 
   // Close popover when clicking outside
   useEffect(() => {
@@ -905,7 +917,13 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
       group.scale.set(1, 0.05, 1);
       group.userData = { targetScaleY: 1.0, isBeacon: true, code };
 
-      const mainColor = role === 'gold' ? 0xfbbf24 : role === 'cyan' ? 0x00f2fe : 0x38bdf8;
+      const themePrimaryHex = 
+        activeThemeRef.current === 'gold-titanium' ? 0xf59e0b :
+        activeThemeRef.current === 'emerald-tech' ? 0x10b981 :
+        activeThemeRef.current === 'crimson-command' ? 0xf43f5e :
+        0x00f2fe;
+
+      const mainColor = role === 'gold' ? 0xfbbf24 : role === 'cyan' ? themePrimaryHex : 0x38bdf8;
 
       // Vertical tapered leader beam with origin at bottom
       const beamGeo = new THREE.CylinderGeometry(0.08, 0.28, 1.0, 16);

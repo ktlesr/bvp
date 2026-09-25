@@ -147,10 +147,35 @@ export default function App() {
   const currentOverview = getProvinceOverview(selectedProvinceCode);
 
   return (
-    <div className="min-h-screen bg-[#030816] text-slate-100 flex flex-col datav-grid-bg relative overflow-x-hidden selection:bg-cyan-500/30">
-      {/* Background radial ambient lights */}
-      <div className="absolute top-0 left-1/4 w-96 h-96 bg-cyan-600/10 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute top-1/3 right-1/4 w-[32rem] h-[32rem] bg-blue-600/10 rounded-full blur-[140px] pointer-events-none" />
+    <div 
+      data-theme={activeTheme}
+      className={`min-h-screen theme-${activeTheme} bg-[#030816] text-slate-100 flex flex-col datav-grid-bg relative overflow-x-hidden transition-colors duration-500`}
+    >
+      {/* Background radial ambient lights dynamically responding to active theme */}
+      <div 
+        className="absolute top-0 left-1/4 w-96 h-96 rounded-full blur-[130px] pointer-events-none transition-all duration-700" 
+        style={{
+          backgroundColor: activeTheme === 'gold-titanium'
+            ? 'rgba(245, 158, 11, 0.16)'
+            : activeTheme === 'emerald-tech'
+            ? 'rgba(16, 185, 129, 0.16)'
+            : activeTheme === 'crimson-command'
+            ? 'rgba(244, 63, 94, 0.16)'
+            : 'rgba(6, 182, 212, 0.12)'
+        }}
+      />
+      <div 
+        className="absolute top-1/3 right-1/4 w-[32rem] h-[32rem] rounded-full blur-[150px] pointer-events-none transition-all duration-700" 
+        style={{
+          backgroundColor: activeTheme === 'gold-titanium'
+            ? 'rgba(217, 119, 6, 0.14)'
+            : activeTheme === 'emerald-tech'
+            ? 'rgba(5, 150, 105, 0.14)'
+            : activeTheme === 'crimson-command'
+            ? 'rgba(225, 29, 72, 0.14)'
+            : 'rgba(59, 130, 246, 0.1)'
+        }}
+      />
 
       {/* 1. SC-DataV Top Header */}
       <Header
@@ -255,6 +280,7 @@ export default function App() {
               isAutoPlay={isAutoPlay}
               autoPlayProgress={kioskProgress}
               autoPlayStepTitle={KIOSK_STEPS[kioskStepIdx]?.label}
+              activeTheme={activeTheme}
             />
           </div>
 

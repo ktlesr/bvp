@@ -11,6 +11,7 @@ import {
   METRIC_CATALOG 
 } from '../data/metricCatalog';
 import { DashboardMode } from './Header';
+import { ThemeMode } from '../utils/theme';
 
 export type { MapMetricType };
 
@@ -25,6 +26,7 @@ interface TurkeyMapProps {
   isAutoPlay?: boolean;
   autoPlayProgress?: number;
   autoPlayStepTitle?: string;
+  activeTheme?: ThemeMode;
 }
 
 // Major economic hub coordinates for animated flight/flow pulses

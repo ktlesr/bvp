@@ -168,17 +168,18 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           {/* Theme Selector */}
-          <div className="relative hidden md:block">
+          <div className="relative hidden md:flex items-center gap-1.5 px-2 py-1 rounded-xs bg-[#07193b]/80 border border-cyan-500/30 hover:border-cyan-400 transition-colors">
+            <Palette className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
             <select
               value={activeTheme}
               onChange={(e) => onThemeChange(e.target.value as ThemeMode)}
-              className="bg-[#07193b]/80 border border-cyan-500/30 rounded-xs px-2 py-1.5 text-xs text-cyan-300 font-['Rajdhani'] font-bold focus:outline-none focus:border-cyan-400 cursor-pointer"
+              className="bg-transparent text-xs text-cyan-300 font-['Rajdhani'] font-bold focus:outline-none cursor-pointer pr-1"
               title="Arayüz Neon Tema Rengi"
             >
               <option value="cyber-blue" className="bg-[#040e20] text-cyan-300">Siber Mavi</option>
-              <option value="emerald" className="bg-[#040e20] text-emerald-300">Neon Zümrüt</option>
-              <option value="crimson" className="bg-[#040e20] text-rose-300">Kızıl Komuta</option>
-              <option value="amber" className="bg-[#040e20] text-amber-300">Kehribar Altın</option>
+              <option value="gold-titanium" className="bg-[#181105] text-amber-400">Kehribar Altın</option>
+              <option value="emerald-tech" className="bg-[#031c11] text-emerald-400">Neon Zümrüt</option>
+              <option value="crimson-command" className="bg-[#1f0610] text-rose-400">Kızıl Komuta</option>
             </select>
           </div>
 
