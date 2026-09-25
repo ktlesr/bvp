@@ -1,0 +1,6 @@
+{
+  "name": "DataV Türkiye — Premium Veri Görselleştirme Komuta Merkezi",
+  "description": "SC-DataV mimarisinde tasarlanmış, Türkiye geneli 81 il için dış ticaret, sanayi OSB, kadın istihdamı, demografi ve sosyoekonomik göstergeleri canlı harita ve fütüristik büyük ekran grafiklerle sunan premium analitik paneli.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
