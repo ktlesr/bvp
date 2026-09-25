@@ -89,6 +89,16 @@ export default function App() {
   const currentWomenShare = getWomenShare(selectedProvinceCode, 7);
   const currentOverview = getProvinceOverview(selectedProvinceCode);
 
+  const getMetricTitle = (metric: MapMetricType): string => {
+    switch (metric) {
+      case 'export': return 'İHRACAT LİDERLERİ';
+      case 'osb': return 'OSB LİDERLERİ';
+      case 'women': return 'KADIN PAYI LİDERLERİ';
+      case 'population': return 'NÜFUS LİDERLERİ';
+      case 'gdp': return 'GSYH LİDERLERİ';
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#030816] text-slate-100 flex flex-col datav-grid-bg relative overflow-x-hidden selection:bg-cyan-500/30">
       {/* Background radial ambient lights */}
@@ -155,14 +165,14 @@ export default function App() {
         />
       </div>
 
-      {/* 3. Main Data Screen (Left & Right scalable sidebars, Center Map expands dynamically) */}
+      {/* 3. Main Data Screen (Left & Right scalable sidebars 240px-280px-320px, Center Map expands dynamically) */}
       <main className="flex-1 px-2.5 md:px-4 lg:px-6 py-2 flex flex-col lg:flex-row gap-3 z-10 min-h-0">
         
-        {/* Left Column: Leaderboard & Composition (Scales gracefully: 280px -> 320px -> 360px) */}
-        <div className="w-full lg:w-[280px] xl:w-[320px] 2xl:w-[360px] shrink-0 flex flex-col gap-3">
+        {/* Left Column: Leaderboard & Composition (Scales smoothly: 240px -> 280px -> 320px) */}
+        <div className="w-full lg:w-[240px] xl:w-[280px] 2xl:w-[320px] shrink-0 flex flex-col gap-3 transition-all duration-300 ease-in-out">
           {/* Box 1: Top Provinces Leaderboard */}
           <BorderBox
-            title={`${activeMetric.toUpperCase()} LİDERLERİ`}
+            title={getMetricTitle(activeMetric)}
             subtitle="İLK 8 İL"
             badge="CANLI SIRALAMA"
             className="flex-1 min-h-[300px]"
@@ -174,11 +184,11 @@ export default function App() {
             />
           </BorderBox>
 
-          {/* Box 2: Composition Donut Chart */}
+          {/* Box 2: Composition Donut Chart (Year badge 2025) */}
           <BorderBox
             title="OSB & SANAYİ DAĞILIMI"
             subtitle={`${selectedName.toUpperCase()}`}
-            badge="PARÇA-BÜTÜN"
+            badge="2025"
             className="min-h-[220px]"
           >
             <CompositionChart provinceCode={selectedProvinceCode} />
@@ -186,7 +196,7 @@ export default function App() {
         </div>
 
         {/* Center Column: Map Expands to Fill All Available Screen Space (flex-1 min-w-0) */}
-        <div className="flex-1 min-w-0 flex flex-col gap-3">
+        <div className="flex-1 min-w-0 flex flex-col gap-3 transition-all duration-300 ease-in-out">
           {/* Main Interactive Map (scales with viewport height) */}
           <div className="flex-1 min-h-[480px] xl:min-h-[540px] 2xl:min-h-[620px] flex flex-col">
             <TurkeyMap
@@ -231,8 +241,8 @@ export default function App() {
           </div>
         </div>
 
-        {/* Right Column: Trends, Radar & Event Ticker (Scales gracefully: 280px -> 320px -> 360px) */}
-        <div className="w-full lg:w-[280px] xl:w-[320px] 2xl:w-[360px] shrink-0 flex flex-col gap-3">
+        {/* Right Column: Trends, Radar & Event Ticker (Scales smoothly: 240px -> 280px -> 320px) */}
+        <div className="w-full lg:w-[240px] xl:w-[280px] 2xl:w-[320px] shrink-0 flex flex-col gap-3 transition-all duration-300 ease-in-out">
           {/* Box 3: Multi-Year Trend Chart */}
           <BorderBox
             title="DÖNEMSEL TREND ANALİZİ"

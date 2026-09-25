@@ -11,7 +11,8 @@ import {
   Pause, 
   Palette,
   RefreshCw,
-  Search
+  Search,
+  Camera
 } from 'lucide-react';
 import { ThemeMode, THEMES } from '../utils/theme';
 
@@ -112,7 +113,7 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex flex-col items-center justify-center pointer-events-none px-4">
           <div className="relative px-6 md:px-12 py-1 bg-gradient-to-b from-[#081a3d] to-[#040c1e] border-x border-b border-cyan-400/50 shadow-[0_4px_25px_rgba(0,242,254,0.25)] [clip-path:polygon(0_0,100%_0,88%_100%,12%_100%)]">
             <h1 className="font-['Orbitron'] font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-white via-cyan-200 to-cyan-400 text-sm md:text-xl text-center uppercase drop-shadow-[0_0_12px_rgba(0,242,254,0.6)]">
-              TÜRKİYE BÖLGESEL VERİ STÜDYOSU
+              TÜRKİYE BÖLGESEL VERİ PORTALI
             </h1>
             <div className="flex items-center justify-center gap-2 text-[9px] md:text-[10px] text-cyan-300/80 font-mono tracking-widest uppercase">
               <span>SC-DATAV COMMAND CENTER</span>
@@ -126,6 +127,16 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right Side: Tools, Live Clock, Fullscreen */}
         <div className="flex items-center gap-2 md:gap-3 text-xs font-mono text-cyan-300/90">
+          {/* PNG Snapshot Button */}
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('export-map-png'))}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xs bg-[#07193b]/70 border border-cyan-500/30 hover:border-cyan-400 text-cyan-200 text-xs transition-colors"
+            title="3D Harita Görüntüsünü PNG Olarak İndir"
+          >
+            <Camera className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="hidden lg:inline font-['Rajdhani'] font-semibold">PNG İNDİR</span>
+          </button>
+
           {/* Quick Province Search Button */}
           <button
             onClick={onOpenProvinceSearch}
@@ -158,12 +169,12 @@ export const Header: React.FC<HeaderProps> = ({
             {isFullscreen ? <Minimize className="w-3.5 h-3.5" /> : <Maximize className="w-3.5 h-3.5" />}
           </button>
 
-          {/* Real-Time Digital Clock */}
-          <div className="hidden sm:flex flex-col items-end pl-2 border-l border-cyan-500/20">
-            <span className="text-sm font-['Orbitron'] font-bold text-white tracking-wider">
+          {/* Real-Time Digital Clock - Fixed Width & Tabular Numbers to Prevent Jitter */}
+          <div className="hidden sm:flex flex-col items-end pl-2.5 border-l border-cyan-500/20 w-[100px] shrink-0 text-right select-none">
+            <span className="text-sm font-['Orbitron'] font-bold text-white tracking-wider tabular-nums font-mono w-full inline-block text-right">
               {timeStr}
             </span>
-            <span className="text-[10px] text-cyan-400/70 font-mono tracking-tight">
+            <span className="text-[10px] text-cyan-400/70 font-mono tracking-tight tabular-nums w-full inline-block text-right whitespace-nowrap">
               {dateStr}
             </span>
           </div>

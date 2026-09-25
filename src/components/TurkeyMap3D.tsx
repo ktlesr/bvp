@@ -4,7 +4,9 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { 
   RotateCcw, 
   Compass, 
-  MapPin
+  Camera,
+  Sliders,
+  Layers
 } from 'lucide-react';
 import defaultGeoData from '../data/nuts3.geo.json';
 import { PROVINCE_CODES, REGIONS } from '../data/regions';
@@ -14,7 +16,9 @@ import { getWomenShare } from '../data/womenTradeData';
 import { getProvinceOverview } from '../data/demographyData';
 
 export type MapMetricType = 'export' | 'osb' | 'women' | 'population' | 'gdp';
-export type MapStyleType = 'earth' | 'cyber' | 'hybrid';
+
+// Light-color themes specifically for the 3D outer extrude pedestal walls
+export type ExtrudeWallColorType = 'white' | 'silver' | 'marble' | 'ice';
 
 interface TurkeyMap3DProps {
   selectedProvinceCode: string;
@@ -29,11 +33,12 @@ const CENTER_LAT = 38.96;
 const SCALE_X = 2.8;
 const SCALE_Z = 3.6;
 
-// Geographic bounding box for Turkey world coordinates
-const W_MIN = -26.85;
-const W_MAX = 26.85;
-const Z_MIN = -11.35; // North (Sinop)
-const Z_MAX = 11.35;  // South (Hatay)
+// Exact Web Mercator bounds of the authentic Google Earth satellite texture (/turkey_satellite.jpg)
+// Downloaded from Esri World Imagery (ArcGIS DigitalGlobe / Maxar satellite source used by Google Earth)
+const SAT_LON_MIN = 25.3125;
+const SAT_LON_MAX = 47.8125;
+const SAT_MERC_NORTH = 0.8344855; // tile 47 top (lat 43.06888°)
+const SAT_MERC_SOUTH = 0.6381360; // tile 51 top / tile 50 bottom (lat 34.30714°)
 
 function lonLatToWorld(lon: number, lat: number): [number, number] {
   const x = (lon - CENTER_LON) * SCALE_X;
@@ -75,6 +80,44 @@ if (defaultGeoData && (defaultGeoData as any).features) {
   });
 }
 
+// Precompute ONLY the outermost boundary segments of Turkey (coastlines & national border)
+const TURKEY_OUTER_SEGMENTS: [[number, number], [number, number]][] = [];
+if (defaultGeoData && (defaultGeoData as any).features) {
+  const directedMap = new Map<string, [[number, number], [number, number]]>();
+  const undirectedMap = new Map<string, number>();
+
+  function ptKey(pt: number[]) {
+    return (Math.round(pt[0] * 10000) / 10000) + ',' + (Math.round(pt[1] * 10000) / 10000);
+  }
+
+  (defaultGeoData as any).features.forEach((f: any) => {
+    const geomType = f.geometry.type;
+    const coords = geomType === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
+    coords.forEach((poly: any) => {
+      poly.forEach((ring: number[][]) => {
+        for (let i = 0; i < ring.length - 1; i++) {
+          const k1 = ptKey(ring[i]);
+          const k2 = ptKey(ring[i + 1]);
+          if (k1 === k2) continue;
+          const uk = k1 < k2 ? k1 + '|' + k2 : k2 + '|' + k1;
+          undirectedMap.set(uk, (undirectedMap.get(uk) || 0) + 1);
+          directedMap.set(k1 + '->' + k2, [ring[i] as [number, number], ring[i + 1] as [number, number]]);
+        }
+      });
+    });
+  });
+
+  undirectedMap.forEach((cnt, uk) => {
+    if (cnt === 1) {
+      const [k1, k2] = uk.split('|');
+      const edge = directedMap.get(k1 + '->' + k2) || directedMap.get(k2 + '->' + k1);
+      if (edge) {
+        TURKEY_OUTER_SEGMENTS.push(edge);
+      }
+    }
+  });
+}
+
 function getCategoryLabel(metric: MapMetricType): string {
   switch (metric) {
     case 'export': return 'İhracat Hacmi';
@@ -101,23 +144,7 @@ function formatMetricDisplay(metric: MapMetricType, val: number): string {
   return String(val);
 }
 
-function formatMetricShort(metric: MapMetricType, val: number): string {
-  if (metric === 'export') {
-    if (val >= 1e9) return `$${(val / 1e9).toFixed(2)}B`;
-    if (val >= 1e6) return `$${(val / 1e6).toFixed(1)}M`;
-    return `$${val.toLocaleString('tr-TR')}`;
-  }
-  if (metric === 'osb') return `${val} OSB`;
-  if (metric === 'women') return `%${val.toFixed(1)}`;
-  if (metric === 'population') {
-    if (val >= 1e6) return `${(val / 1e6).toFixed(1)}M`;
-    return `${(val / 1e3).toFixed(0)}K`;
-  }
-  if (metric === 'gdp') return `$${val.toLocaleString('tr-TR')}`;
-  return String(val);
-}
-
-// Generate Premium Futuristic Command Center 3D Billboard Tag (512x160 Hi-Res Canvas)
+// Generate Compact, High-Density 3D Billboard Tag (480x148 Hi-Res Canvas)
 function createCyberBillboardTexture(
   rank: number,
   name: string,
@@ -126,54 +153,54 @@ function createCyberBillboardTexture(
   colorScheme: 'gold' | 'cyan' | 'emerald' | 'blue'
 ): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 160;
+  canvas.width = 480;
+  canvas.height = 148;
   const ctx = canvas.getContext('2d');
   if (!ctx) return new THREE.CanvasTexture(canvas);
 
   const theme = {
     gold: {
-      primary: '#fbbf24',
+      primary: '#f59e0b',
       badgeBg: '#fbbf24',
-      badgeText: '#0a0e1a',
-      border: 'rgba(251, 191, 36, 0.90)',
-      glow: 'rgba(251, 191, 36, 0.45)',
-      bg: 'rgba(6, 17, 36, 0.94)'
+      badgeText: '#0f172a',
+      border: 'rgba(251, 191, 36, 0.95)',
+      glow: 'rgba(251, 191, 36, 0.55)',
+      bg: 'rgba(15, 23, 42, 0.96)'
     },
     cyan: {
       primary: '#00f2fe',
       badgeBg: '#00f2fe',
-      badgeText: '#030814',
-      border: 'rgba(0, 242, 254, 0.90)',
-      glow: 'rgba(0, 242, 254, 0.45)',
-      bg: 'rgba(4, 15, 34, 0.94)'
+      badgeText: '#0f172a',
+      border: 'rgba(0, 242, 254, 0.95)',
+      glow: 'rgba(0, 242, 254, 0.55)',
+      bg: 'rgba(15, 23, 42, 0.96)'
     },
     emerald: {
-      primary: '#05ffa1',
-      badgeBg: '#05ffa1',
-      badgeText: '#030814',
-      border: 'rgba(5, 255, 161, 0.90)',
-      glow: 'rgba(5, 255, 161, 0.45)',
-      bg: 'rgba(3, 18, 30, 0.94)'
+      primary: '#10b981',
+      badgeBg: '#10b981',
+      badgeText: '#0f172a',
+      border: 'rgba(16, 185, 129, 0.95)',
+      glow: 'rgba(16, 185, 129, 0.55)',
+      bg: 'rgba(15, 23, 42, 0.96)'
     },
     blue: {
       primary: '#38bdf8',
       badgeBg: '#38bdf8',
-      badgeText: '#030814',
-      border: 'rgba(56, 189, 248, 0.80)',
-      glow: 'rgba(56, 189, 248, 0.35)',
-      bg: 'rgba(4, 15, 34, 0.92)'
+      badgeText: '#0f172a',
+      border: 'rgba(56, 189, 248, 0.90)',
+      glow: 'rgba(56, 189, 248, 0.45)',
+      bg: 'rgba(15, 23, 42, 0.94)'
     }
   }[colorScheme];
 
   const w = canvas.width;
   const h = canvas.height;
-  const pad = 10;
+  const pad = 8;
 
   // 1. Shadowed Card Background
   ctx.save();
   ctx.shadowColor = theme.glow;
-  ctx.shadowBlur = 18;
+  ctx.shadowBlur = 16;
   ctx.fillStyle = theme.bg;
   ctx.beginPath();
   ctx.roundRect(pad, pad, w - pad * 2, h - pad * 2, 8);
@@ -188,28 +215,24 @@ function createCyberBillboardTexture(
   ctx.stroke();
 
   // 3. Cyber HUD Corner Brackets
-  const brk = 14;
+  const brk = 12;
   ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 3;
-  // Top-Left
+  ctx.lineWidth = 2.5;
   ctx.beginPath();
   ctx.moveTo(pad - 1, pad + brk);
   ctx.lineTo(pad - 1, pad - 1);
   ctx.lineTo(pad + brk, pad - 1);
   ctx.stroke();
-  // Top-Right
   ctx.beginPath();
   ctx.moveTo(w - pad + 1 - brk, pad - 1);
   ctx.lineTo(w - pad + 1, pad - 1);
   ctx.lineTo(w - pad + 1, pad + brk);
   ctx.stroke();
-  // Bottom-Left
   ctx.beginPath();
   ctx.moveTo(pad - 1, h - pad - brk);
   ctx.lineTo(pad - 1, h - pad + 1);
   ctx.lineTo(pad + brk, h - pad + 1);
   ctx.stroke();
-  // Bottom-Right
   ctx.beginPath();
   ctx.moveTo(w - pad + 1 - brk, h - pad + 1);
   ctx.lineTo(w - pad + 1, h - pad + 1);
@@ -218,10 +241,10 @@ function createCyberBillboardTexture(
 
   // 4. Header Bar
   const rankStr = rank < 10 ? `#0${rank}` : `#${rank}`;
-  const badgeW = 68;
-  const badgeH = 34;
-  const badgeX = pad + 16;
-  const badgeY = pad + 14;
+  const badgeW = 62;
+  const badgeH = 30;
+  const badgeX = pad + 14;
+  const badgeY = pad + 12;
 
   // Rank Pill
   ctx.fillStyle = theme.badgeBg;
@@ -230,27 +253,27 @@ function createCyberBillboardTexture(
   ctx.fill();
 
   ctx.fillStyle = theme.badgeText;
-  ctx.font = 'bold 21px "Orbitron", monospace, sans-serif';
+  ctx.font = 'bold 19px "Orbitron", monospace, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(rankStr, badgeX + badgeW / 2, badgeY + badgeH / 2);
 
   // City Name
   ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 26px "Rajdhani", sans-serif';
+  ctx.font = 'bold 24px "Rajdhani", sans-serif';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  ctx.fillText(name.toUpperCase(), badgeX + badgeW + 14, badgeY + badgeH / 2);
+  ctx.fillText(name.toUpperCase(), badgeX + badgeW + 12, badgeY + badgeH / 2);
 
   // Category Tag on right
   ctx.fillStyle = theme.primary;
-  ctx.font = 'bold 15px "Rajdhani", sans-serif';
+  ctx.font = 'bold 14px "Rajdhani", sans-serif';
   ctx.textAlign = 'right';
-  ctx.fillText(categoryLabel.toUpperCase(), w - pad - 18, badgeY + badgeH / 2);
+  ctx.fillText(categoryLabel.toUpperCase(), w - pad - 14, badgeY + badgeH / 2);
 
   // 5. Tech Divider Line
-  const divY = badgeY + badgeH + 12;
-  const lineGrad = ctx.createLinearGradient(pad + 16, divY, w - pad - 16, divY);
+  const divY = badgeY + badgeH + 10;
+  const lineGrad = ctx.createLinearGradient(pad + 14, divY, w - pad - 14, divY);
   lineGrad.addColorStop(0, 'rgba(255, 255, 255, 0.1)');
   lineGrad.addColorStop(0.3, theme.border);
   lineGrad.addColorStop(0.7, theme.border);
@@ -258,18 +281,18 @@ function createCyberBillboardTexture(
   ctx.strokeStyle = lineGrad;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.moveTo(pad + 16, divY);
-  ctx.lineTo(w - pad - 16, divY);
+  ctx.moveTo(pad + 14, divY);
+  ctx.lineTo(w - pad - 14, divY);
   ctx.stroke();
 
   // 6. Centered, Balanced Value
   ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 36px "Orbitron", monospace, sans-serif';
+  ctx.font = 'bold 33px "Orbitron", monospace, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.shadowColor = theme.glow;
   ctx.shadowBlur = 12;
-  ctx.fillText(metricText, w / 2, divY + 40);
+  ctx.fillText(metricText, w / 2, divY + 38);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
@@ -277,97 +300,68 @@ function createCyberBillboardTexture(
   return texture;
 }
 
-// Generate photorealistic Google Earth style topographic canvas texture
-function createSatelliteReliefTexture(): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 1024;
-  canvas.height = 512;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return new THREE.CanvasTexture(canvas);
+// Light colors for the 3D extrusion pedestal side walls
+const EXTRUDE_WALL_COLORS: Record<ExtrudeWallColorType, { name: string; hex: number; lineHex: number }> = {
+  white: { name: 'Açık Platin / Beyaz', hex: 0xf1f5f9, lineHex: 0x00f2fe },
+  silver: { name: 'Açık Gümüş Metalik', hex: 0xe2e8f0, lineHex: 0x38bdf8 },
+  marble: { name: 'Açık Mermer / Kumtaşı', hex: 0xfef3c7, lineHex: 0xf59e0b },
+  ice: { name: 'Açık Buz Mavisi', hex: 0xe0f2fe, lineHex: 0x00f2fe }
+};
 
-  // Background deep base
-  ctx.fillStyle = '#1c261e';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+// Smart Multi-Tier Elevation Algorithm:
+// Calculates staggered base heights for geographically adjacent clusters (e.g. Marmara: İstanbul, Kocaeli, Bursa)
+// Northern background cities get taller pedestals; Southern foreground cities get lower pedestals.
+// Result: Natural stadium seating perspective where every card is 100% visible!
+function assignAdaptiveHeights(items: { code: string; rank: number }[]): Map<string, number> {
+  const result = new Map<string, number>();
+  const clusters: { code: string; rank: number }[][] = [];
+  const visited = new Set<string>();
 
-  // Natural landscape base gradient
-  const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-  grad.addColorStop(0.0, '#1a3c1e'); // Northern Black Sea coastal forest belt
-  grad.addColorStop(0.2, '#2d4d28'); // Pontic mountain foothills
-  grad.addColorStop(0.45, '#5c4d36'); // Central Anatolian plateau steppe
-  grad.addColorStop(0.65, '#6a563c'); // South Central hills
-  grad.addColorStop(0.85, '#3b4c2b'); // Taurus mountain slopes
-  grad.addColorStop(1.0, '#1c341b'); // Mediterranean coastal green
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  for (let i = 0; i < items.length; i++) {
+    const codeA = items[i].code;
+    if (visited.has(codeA)) continue;
+    const cluster = [items[i]];
+    visited.add(codeA);
 
-  // Procedural mountain ranges & rugged relief topography
-  for (let i = 0; i < 450; i++) {
-    const rx = Math.random() * canvas.width;
-    const ry = Math.random() * canvas.height;
-    const rrad = 12 + Math.random() * 50;
+    const ptA = PROVINCE_CENTROIDS[codeA];
+    if (!ptA) continue;
+    const [xA, zA] = lonLatToWorld(ptA[0], ptA[1]);
 
-    const isNorthChain = ry < 170;
-    const isSouthChain = ry > 310;
-    const isEastHighlands = rx > 640;
-
-    const opacity = (isNorthChain || isSouthChain || isEastHighlands)
-      ? 0.4 + Math.random() * 0.45
-      : 0.15 + Math.random() * 0.25;
-
-    ctx.save();
-    ctx.translate(rx, ry);
-    ctx.rotate((Math.random() - 0.5) * 1.8);
-    const mGrad = ctx.createRadialGradient(0, 0, 2, 0, 0, rrad);
-
-    if (isEastHighlands && rx > 740 && ry > 80 && ry < 340 && Math.random() > 0.45) {
-      mGrad.addColorStop(0, `rgba(240, 248, 255, ${opacity * 1.4})`);
-      mGrad.addColorStop(0.35, `rgba(130, 115, 100, ${opacity})`);
-      mGrad.addColorStop(1, 'transparent');
-    } else if (isNorthChain) {
-      mGrad.addColorStop(0, `rgba(20, 50, 24, ${opacity})`);
-      mGrad.addColorStop(0.5, `rgba(45, 80, 40, ${opacity * 0.7})`);
-      mGrad.addColorStop(1, 'transparent');
-    } else {
-      mGrad.addColorStop(0, `rgba(85, 70, 52, ${opacity})`);
-      mGrad.addColorStop(0.5, `rgba(55, 65, 45, ${opacity * 0.8})`);
-      mGrad.addColorStop(1, 'transparent');
+    for (let j = i + 1; j < items.length; j++) {
+      const codeB = items[j].code;
+      if (visited.has(codeB)) continue;
+      const ptB = PROVINCE_CENTROIDS[codeB];
+      if (!ptB) continue;
+      const [xB, zB] = lonLatToWorld(ptB[0], ptB[1]);
+      if (Math.hypot(xA - xB, zA - zB) < 5.8) {
+        cluster.push(items[j]);
+        visited.add(codeB);
+      }
     }
-
-    ctx.fillStyle = mGrad;
-    ctx.beginPath();
-    ctx.ellipse(0, 0, rrad, rrad * (0.3 + Math.random() * 0.4), 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+    clusters.push(cluster);
   }
 
-  // Lake Van (Eastern Anatolia)
-  ctx.save();
-  const vanGrad = ctx.createRadialGradient(865, 275, 4, 865, 275, 36);
-  vanGrad.addColorStop(0, '#0f415c');
-  vanGrad.addColorStop(0.8, '#145c82');
-  vanGrad.addColorStop(1, 'transparent');
-  ctx.fillStyle = vanGrad;
-  ctx.beginPath();
-  ctx.ellipse(865, 275, 36, 24, -0.2, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
+  clusters.forEach((cluster) => {
+    if (cluster.length === 1) {
+      result.set(cluster[0].code, cluster[0].rank === 1 ? 9.5 : 7.6);
+    } else {
+      // Sort cluster by latitude descending (North to South).
+      // North is farther in aerial perspective, so receives taller elevation!
+      cluster.sort((a, b) => {
+        const latA = PROVINCE_CENTROIDS[a.code] ? PROVINCE_CENTROIDS[a.code][1] : 39;
+        const latB = PROVINCE_CENTROIDS[b.code] ? PROVINCE_CENTROIDS[b.code][1] : 39;
+        return latB - latA; // Highest lat (north) first
+      });
 
-  // Lake Tuz (Central Anatolia)
-  ctx.save();
-  const tuzGrad = ctx.createRadialGradient(440, 250, 4, 440, 250, 28);
-  tuzGrad.addColorStop(0, '#c2d2d9');
-  tuzGrad.addColorStop(0.7, '#8aa8b6');
-  tuzGrad.addColorStop(1, 'transparent');
-  ctx.fillStyle = tuzGrad;
-  ctx.beginPath();
-  ctx.ellipse(440, 250, 28, 18, 0.4, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
+      // Distinct, non-overlapping elevation tiers
+      const tiers = [11.8, 8.8, 5.8, 14.2];
+      cluster.forEach((item, idx) => {
+        result.set(item.code, tiers[idx] || 7.6);
+      });
+    }
+  });
 
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.ClampToEdgeWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
-  return texture;
+  return result;
 }
 
 export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
@@ -377,7 +371,13 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
   onMetricChange
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
-  const [mapStyle, setMapStyle] = useState<MapStyleType>('earth');
+  
+  // 3D Extrusion Depth
+  const [extrudeDepth, setExtrudeDepth] = useState<number>(1.4);
+  const [extrudeWallColor, setExtrudeWallColor] = useState<ExtrudeWallColorType>('white');
+  const [isExtrudeOpen, setIsExtrudeOpen] = useState<boolean>(false);
+  const extrudePopoverRef = useRef<HTMLDivElement>(null);
+
   const [hoveredInfo, setHoveredInfo] = useState<{
     code: string;
     name: string;
@@ -391,15 +391,48 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
-  const provinceMeshesRef = useRef<Map<string, THREE.Mesh[]>>(new Map());
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+
+  // 3D Groups for unified outer extrusion scaling
+  const topGroupRef = useRef<THREE.Group | null>(null);
+  const sideWallMeshRef = useRef<THREE.Mesh | null>(null);
+  const outerTopLineRef = useRef<THREE.LineSegments | null>(null);
+  const outerBottomLineRef = useRef<THREE.LineSegments | null>(null);
+  const baseBeaconsGroupRef = useRef<THREE.Group | null>(null);
+  const dynamicArcsGroupRef = useRef<THREE.Group | null>(null);
+  const hoverBeaconGroupRef = useRef<THREE.Group | null>(null);
+
+  // Map to hold each province's top flat ShapeGeometry meshes
+  const provinceMeshesMapRef = useRef<Map<string, THREE.Mesh[]>>(new Map());
+
   const selectedMeshCodeRef = useRef<string>(selectedProvinceCode);
   selectedMeshCodeRef.current = selectedProvinceCode;
   const activeMetricRef = useRef<MapMetricType>(activeMetric);
   activeMetricRef.current = activeMetric;
+  const extrudeDepthRef = useRef<number>(extrudeDepth);
+  extrudeDepthRef.current = extrudeDepth;
+  const extrudeWallColorRef = useRef<ExtrudeWallColorType>(extrudeWallColor);
+  extrudeWallColorRef.current = extrudeWallColor;
 
   // External update handlers
   const updateBaseBeaconsRef = useRef<((metric: MapMetricType, selCode: string) => void) | null>(null);
   const updateHoverBeaconRef = useRef<((code: string | null) => void) | null>(null);
+  const updateProvincesVisualRef = useRef<(() => void) | null>(null);
+
+  // Close popover when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (extrudePopoverRef.current && !extrudePopoverRef.current.contains(event.target as Node)) {
+        setIsExtrudeOpen(false);
+      }
+    };
+    if (isExtrudeOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isExtrudeOpen]);
 
   // Find min, max, and selected province rank using pure computeProvinceMetric
   const { minVal, maxVal, selectedRank } = useMemo(() => {
@@ -422,6 +455,17 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
     };
   }, [activeMetric, selectedProvinceCode]);
 
+  // PNG Snapshot Export Function
+  const exportMapPNG = () => {
+    if (!rendererRef.current || !sceneRef.current || !cameraRef.current) return;
+    rendererRef.current.render(sceneRef.current, cameraRef.current);
+    const dataURL = rendererRef.current.domElement.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.download = `turkiye-3d-harita-google-earth-${new Date().toISOString().slice(0, 10)}.png`;
+    a.href = dataURL;
+    a.click();
+  };
+
   // Main Three.js Scene Setup
   useEffect(() => {
     const container = mountRef.current;
@@ -433,14 +477,20 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
     // 1. Scene, Camera, Renderer
     const scene = new THREE.Scene();
     sceneRef.current = scene;
-    scene.background = new THREE.Color(0x030814);
-    scene.fog = new THREE.FogExp2(0x030814, 0.009);
+    scene.background = new THREE.Color(0x060d1a);
+    scene.fog = null; // No dark fog to keep the Google Earth satellite photo crystal clear!
 
     const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 1000);
     cameraRef.current = camera;
     camera.position.set(0, 38, 48); // Perspective aerial view
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+    const renderer = new THREE.WebGLRenderer({ 
+      antialias: true, 
+      alpha: true, 
+      powerPreference: 'high-performance',
+      preserveDrawingBuffer: true
+    });
+    rendererRef.current = renderer;
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
@@ -460,71 +510,141 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
     controls.maxDistance = 130;
     controls.maxPolarAngle = Math.PI / 2.05;
 
-    // 3. Lighting System
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.95);
+    // 3. Multi-Point Bright Studio Lighting
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.45);
     scene.add(ambientLight);
 
-    const sunLight = new THREE.DirectionalLight(0xfff5e6, 1.4);
-    sunLight.position.set(30, 60, 40);
+    const sunLight = new THREE.DirectionalLight(0xffffff, 1.8);
+    sunLight.position.set(30, 70, 40);
     sunLight.castShadow = true;
     sunLight.shadow.mapSize.width = 2048;
     sunLight.shadow.mapSize.height = 2048;
     scene.add(sunLight);
 
-    const rimLight = new THREE.DirectionalLight(0x00f2fe, 0.8);
-    rimLight.position.set(-30, 20, -30);
+    const frontWallLight = new THREE.DirectionalLight(0xffffff, 1.5);
+    frontWallLight.position.set(0, 20, 60);
+    scene.add(frontWallLight);
+
+    const sideWallLight = new THREE.DirectionalLight(0xf8fafc, 1.2);
+    sideWallLight.position.set(-60, 25, 10);
+    scene.add(sideWallLight);
+
+    const rimLight = new THREE.DirectionalLight(0x00f2fe, 0.9);
+    rimLight.position.set(40, 25, -30);
     scene.add(rimLight);
 
-    // 4. Perspective 3D Grid Plane
-    const gridHelper = new THREE.GridHelper(160, 32, 0x00f2fe, 0x113355);
-    gridHelper.position.y = -0.5;
+    // 4. Perspective 3D Grid Plane (y: 0 ground floor)
+    const gridHelper = new THREE.GridHelper(160, 32, 0x00f2fe, 0x112845);
+    gridHelper.position.y = -0.01;
     (gridHelper.material as THREE.Material).transparent = true;
-    (gridHelper.material as THREE.Material).opacity = 0.35;
+    (gridHelper.material as THREE.Material).opacity = 0.40;
     scene.add(gridHelper);
 
-    const subGrid = new THREE.GridHelper(160, 64, 0x00e1d9, 0x071b30);
-    subGrid.position.y = -0.52;
+    const subGrid = new THREE.GridHelper(160, 64, 0x00f2fe, 0x0a192e);
+    subGrid.position.y = -0.02;
     (subGrid.material as THREE.Material).transparent = true;
-    (subGrid.material as THREE.Material).opacity = 0.2;
+    (subGrid.material as THREE.Material).opacity = 0.22;
     scene.add(subGrid);
 
-    // 5. Starfield / Floating Dust Particles
-    const particleCount = 650;
+    // 5. Starfield / Cyber Matrix Particles STRICTLY UNDER THE GRID
+    const particleCount = 600;
     const particleGeo = new THREE.BufferGeometry();
     const particlePositions = new Float32Array(particleCount * 3);
     for (let i = 0; i < particleCount; i++) {
       particlePositions[i * 3] = (Math.random() - 0.5) * 180;
-      particlePositions[i * 3 + 1] = Math.random() * 50 - 5;
+      particlePositions[i * 3 + 1] = -1.5 - Math.random() * 26;
       particlePositions[i * 3 + 2] = (Math.random() - 0.5) * 180;
     }
     particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
     const particleMat = new THREE.PointsMaterial({
-      color: 0x88ddff,
-      size: 0.6,
+      color: 0x00f2fe,
+      size: 0.65,
       transparent: true,
-      opacity: 0.65
+      opacity: 0.35
     });
     const particleSystem = new THREE.Points(particleGeo, particleMat);
     scene.add(particleSystem);
 
-    // 6. Extruded 3D Provinces Geometry from nuts3.geo.json
-    const satelliteTexture = createSatelliteReliefTexture();
-    const provinceMeshes = new Map<string, THREE.Mesh[]>();
-    provinceMeshesRef.current = provinceMeshes;
+    // 6. BUILD LIGHT-COLORED 3D PEDESTAL SIDE WALLS (Only around the outermost perimeter of Turkey)
+    const wallPositions: number[] = [];
+    const outerTopLinePoints: THREE.Vector3[] = [];
+    const outerBottomLinePoints: THREE.Vector3[] = [];
 
-    const topMaterialsCache = new Map<string, THREE.MeshStandardMaterial>();
+    TURKEY_OUTER_SEGMENTS.forEach(([ptA, ptB]) => {
+      const [x0, z0] = lonLatToWorld(ptA[0], ptA[1]);
+      const [x1, z1] = lonLatToWorld(ptB[0], ptB[1]);
 
-    const sideMaterial = new THREE.MeshStandardMaterial({
-      color: 0x1a2434,
-      metalness: 0.75,
-      roughness: 0.35,
-      shadowSide: THREE.DoubleSide
+      wallPositions.push(
+        x0, 0, z0,
+        x1, 0, z1,
+        x1, 1, z1
+      );
+      wallPositions.push(
+        x0, 0, z0,
+        x1, 1, z1,
+        x0, 1, z0
+      );
+
+      outerTopLinePoints.push(new THREE.Vector3(x0, 1, z0), new THREE.Vector3(x1, 1, z1));
+      outerBottomLinePoints.push(new THREE.Vector3(x0, 0, z0), new THREE.Vector3(x1, 0, z1));
     });
 
-    const EXTRUDE_DEPTH = 1.4;
+    const sideWallGeo = new THREE.BufferGeometry();
+    sideWallGeo.setAttribute('position', new THREE.Float32BufferAttribute(wallPositions, 3));
+    sideWallGeo.computeVertexNormals();
 
-    const mapGroup = new THREE.Group();
-    scene.add(mapGroup);
+    const activeColorConfig = EXTRUDE_WALL_COLORS[extrudeWallColorRef.current];
+    const sideMaterial = new THREE.MeshStandardMaterial({
+      color: activeColorConfig.hex,
+      metalness: 0.15,
+      roughness: 0.30,
+      side: THREE.DoubleSide
+    });
+
+    const sideWallMesh = new THREE.Mesh(sideWallGeo, sideMaterial);
+    sideWallMesh.castShadow = true;
+    sideWallMesh.receiveShadow = true;
+    sideWallMesh.scale.set(1, extrudeDepthRef.current, 1);
+    sideWallMeshRef.current = sideWallMesh;
+    scene.add(sideWallMesh);
+
+    const outerTopLineGeo = new THREE.BufferGeometry().setFromPoints(outerTopLinePoints);
+    const outerTopLineMat = new THREE.LineBasicMaterial({ 
+      color: activeColorConfig.lineHex, 
+      linewidth: 2, 
+      transparent: true, 
+      opacity: 0.95 
+    });
+    const outerTopLine = new THREE.LineSegments(outerTopLineGeo, outerTopLineMat);
+    outerTopLine.scale.set(1, extrudeDepthRef.current, 1);
+    outerTopLineRef.current = outerTopLine;
+    scene.add(outerTopLine);
+
+    const outerBottomLineGeo = new THREE.BufferGeometry().setFromPoints(outerBottomLinePoints);
+    const outerBottomLineMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.65 });
+    const outerBottomLine = new THREE.LineSegments(outerBottomLineGeo, outerBottomLineMat);
+    outerBottomLineRef.current = outerBottomLine;
+    scene.add(outerBottomLine);
+
+    // 7. LOAD AUTHENTIC REAL GOOGLE EARTH SATELLITE TEXTURE (/turkey_satellite.jpg)
+    const textureLoader = new THREE.TextureLoader();
+    const satelliteTexture = textureLoader.load('/turkey_satellite.jpg', () => {
+      renderer.render(scene, camera);
+    });
+    satelliteTexture.colorSpace = THREE.SRGBColorSpace;
+    satelliteTexture.generateMipmaps = true;
+    satelliteTexture.minFilter = THREE.LinearMipmapLinearFilter;
+    satelliteTexture.magFilter = THREE.LinearFilter;
+    satelliteTexture.wrapS = THREE.ClampToEdgeWrapping;
+    satelliteTexture.wrapT = THREE.ClampToEdgeWrapping;
+
+    const provinceMeshesMap = new Map<string, THREE.Mesh[]>();
+    provinceMeshesMapRef.current = provinceMeshesMap;
+
+    const topGroup = new THREE.Group();
+    topGroup.position.y = extrudeDepthRef.current;
+    topGroupRef.current = topGroup;
+    scene.add(topGroup);
 
     if (defaultGeoData && (defaultGeoData as any).features) {
       (defaultGeoData as any).features.forEach((feature: any) => {
@@ -565,27 +685,23 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
             shape.holes.push(holePath);
           }
 
-          const extrudeSettings: THREE.ExtrudeGeometryOptions = {
-            depth: EXTRUDE_DEPTH,
-            bevelEnabled: true,
-            bevelSegments: 2,
-            steps: 1,
-            bevelSize: 0.05,
-            bevelThickness: 0.05
-          };
-
-          const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-          // Rotate by -Math.PI / 2 so positive Y extrudes UPWARDS and Z matches world wz exactly
+          const geometry = new THREE.ShapeGeometry(shape);
           geometry.rotateX(-Math.PI / 2);
 
-          // Calibrate photorealistic geographic UV coordinates matching Turkey satellite terrain
           const pos = geometry.attributes.position;
           const uvs = geometry.attributes.uv;
           for (let i = 0; i < pos.count; i++) {
             const vx = pos.getX(i);
             const vz = pos.getZ(i);
-            const u = (vx - W_MIN) / (W_MAX - W_MIN);
-            const v = (Z_MAX - vz) / (Z_MAX - Z_MIN);
+
+            const lon = vx / SCALE_X + CENTER_LON;
+            const lat = -vz / SCALE_Z + CENTER_LAT;
+
+            const u = (lon - SAT_LON_MIN) / (SAT_LON_MAX - SAT_LON_MIN);
+            const latRad = (lat * Math.PI) / 180;
+            const merc = Math.log(Math.tan(Math.PI / 4 + latRad / 2));
+            const v = (merc - SAT_MERC_SOUTH) / (SAT_MERC_NORTH - SAT_MERC_SOUTH);
+
             uvs.setXY(i, Math.max(0, Math.min(1, u)), Math.max(0, Math.min(1, v)));
           }
           uvs.needsUpdate = true;
@@ -595,44 +711,54 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
             map: satelliteTexture,
             color: 0xffffff,
             roughness: 0.55,
-            metalness: 0.2
+            metalness: 0.12
           });
-          topMaterialsCache.set(code, topMat);
 
-          const mesh = new THREE.Mesh(geometry, [topMat, sideMaterial]);
-          mesh.castShadow = true;
+          const mesh = new THREE.Mesh(geometry, topMat);
           mesh.receiveShadow = true;
           mesh.userData = { code, name, topMat };
 
-          mapGroup.add(mesh);
+          topGroup.add(mesh);
           meshesForProvince.push(mesh);
 
-          // Crisp 3D border line along province top perimeter
           const linePoints: THREE.Vector3[] = outerCoords.map((pt) => {
             const [wx, wz] = lonLatToWorld(pt[0], pt[1]);
-            return new THREE.Vector3(wx, EXTRUDE_DEPTH + 0.08, wz);
+            return new THREE.Vector3(wx, 0.02, wz);
           });
           const lineGeo = new THREE.BufferGeometry().setFromPoints(linePoints);
-          const lineMat = new THREE.LineBasicMaterial({ color: 0x99ddff, transparent: true, opacity: 0.65 });
+          const lineMat = new THREE.LineBasicMaterial({ 
+            color: 0xffffff, 
+            transparent: true, 
+            opacity: 0.70 
+          });
           const borderLine = new THREE.Line(lineGeo, lineMat);
-          mapGroup.add(borderLine);
+          topGroup.add(borderLine);
         });
 
-        provinceMeshes.set(code, meshesForProvince);
+        provinceMeshesMap.set(code, meshesForProvince);
       });
     }
 
-    // 7. Dynamic Persistent Beacons & Separate Hover Beacon
+    // 8. Dynamic Anti-Collision Billboard Beacons & Separate Hover Beacon
     const baseBeaconsGroup = new THREE.Group();
+    baseBeaconsGroup.position.y = extrudeDepthRef.current;
+    baseBeaconsGroupRef.current = baseBeaconsGroup;
     scene.add(baseBeaconsGroup);
 
     const dynamicArcsGroup = new THREE.Group();
+    dynamicArcsGroup.position.y = extrudeDepthRef.current;
+    dynamicArcsGroupRef.current = dynamicArcsGroup;
     scene.add(dynamicArcsGroup);
 
-    // Map to preserve existing base beacons (NO JUMPING when hovering!)
+    // Map to preserve existing base beacons with dynamic anti-collision state
     const activeBaseBeaconsMap = new Map<string, {
       group: THREE.Group;
       sprite: THREE.Sprite;
+      beamMesh: THREE.Mesh;
+      baseHeight: number;
+      currentHeight: number;
+      targetHeight: number;
+      repelOffsetY: number;
       rank: number;
       role: 'gold' | 'cyan' | 'blue';
       metric: MapMetricType;
@@ -640,24 +766,26 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
 
     // Dedicated separate Hover Beacon instance
     const hoverBeaconGroup = new THREE.Group();
+    hoverBeaconGroup.position.y = extrudeDepthRef.current;
+    hoverBeaconGroupRef.current = hoverBeaconGroup;
     hoverBeaconGroup.visible = false;
     scene.add(hoverBeaconGroup);
 
-    // Build hover beacon visual components once
-    const hoverBeamGeo = new THREE.CylinderGeometry(0.12, 0.38, 7.4, 16);
-    const hoverBeamMat = new THREE.MeshBasicMaterial({ color: 0x05ffa1, transparent: true, opacity: 0.75 });
+    // Build hover beacon visual components with scalable stem
+    const hoverBeamGeo = new THREE.CylinderGeometry(0.08, 0.30, 1.0, 16);
+    hoverBeamGeo.translate(0, 0.5, 0); // Origin anchored at base
+    const hoverBeamMat = new THREE.MeshBasicMaterial({ color: 0x00f2fe, transparent: true, opacity: 0.85 });
     const hoverBeamMesh = new THREE.Mesh(hoverBeamGeo, hoverBeamMat);
-    hoverBeamMesh.position.set(0, 3.7, 0);
+    hoverBeamMesh.scale.set(1, 7.4, 1);
     hoverBeaconGroup.add(hoverBeamMesh);
 
     const hoverDot = new THREE.Mesh(new THREE.SphereGeometry(0.44, 16, 16), new THREE.MeshBasicMaterial({ color: 0xffffff }));
     hoverDot.position.set(0, 0.1, 0);
     hoverBeaconGroup.add(hoverDot);
 
-    // Static clean ground ring (NO expanding/shrinking pulse!)
     const hoverRing = new THREE.Mesh(
       new THREE.RingGeometry(0.5, 1.4, 32),
-      new THREE.MeshBasicMaterial({ color: 0x05ffa1, side: THREE.DoubleSide, transparent: true, opacity: 0.85 })
+      new THREE.MeshBasicMaterial({ color: 0x00f2fe, side: THREE.DoubleSide, transparent: true, opacity: 0.90 })
     );
     hoverRing.rotation.x = -Math.PI / 2;
     hoverRing.position.set(0, 0.08, 0);
@@ -669,38 +797,40 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
     hoverBeaconGroup.add(hoverSprite);
     hoverBeaconGroup.userData = { targetScaleY: 1.0, isBeacon: true, sprite: hoverSprite };
 
-    // Function to build a single 3D beacon item
+    // Function to build a single 3D beacon item with adaptive base height
     const createBeaconObject = (
       code: string,
       rank: number,
       name: string,
       val: number,
       metric: MapMetricType,
-      role: 'gold' | 'cyan' | 'blue'
+      role: 'gold' | 'cyan' | 'blue',
+      baseHeight: number = 7.8
     ) => {
       const coords = PROVINCE_CENTROIDS[code];
       if (!coords) return null;
       const [hx, hz] = lonLatToWorld(coords[0], coords[1]);
 
       const group = new THREE.Group();
-      group.position.set(hx, EXTRUDE_DEPTH, hz);
-      group.scale.set(1, 0.05, 1); // Animate from ground level ONCE
+      group.position.set(hx, 0, hz);
+      group.scale.set(1, 0.05, 1);
       group.userData = { targetScaleY: 1.0, isBeacon: true, code };
 
       const mainColor = role === 'gold' ? 0xfbbf24 : role === 'cyan' ? 0x00f2fe : 0x38bdf8;
 
-      // Vertical tapered beam
-      const beamGeo = new THREE.CylinderGeometry(0.1, 0.35, 7.2, 16);
+      // Vertical tapered leader beam with origin at bottom
+      const beamGeo = new THREE.CylinderGeometry(0.08, 0.28, 1.0, 16);
+      beamGeo.translate(0, 0.5, 0);
       const beamMat = new THREE.MeshBasicMaterial({
         color: mainColor,
         transparent: true,
-        opacity: role === 'gold' ? 0.75 : 0.45
+        opacity: role === 'gold' ? 0.85 : 0.60
       });
       const beamMesh = new THREE.Mesh(beamGeo, beamMat);
-      beamMesh.position.set(0, 3.6, 0);
+      beamMesh.scale.set(1, baseHeight, 1);
       group.add(beamMesh);
 
-      // Base glowing dot
+      // Base glowing anchor dot
       const dot = new THREE.Mesh(
         new THREE.SphereGeometry(0.42, 16, 16),
         new THREE.MeshBasicMaterial({ color: 0xffffff })
@@ -708,21 +838,21 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
       dot.position.set(0, 0.1, 0);
       group.add(dot);
 
-      // Static clean base ring on terrain (NO pulsating scale!)
+      // Static clean base ring on terrain
       const ring = new THREE.Mesh(
         new THREE.RingGeometry(0.5, 1.3, 32),
         new THREE.MeshBasicMaterial({
           color: mainColor,
           side: THREE.DoubleSide,
           transparent: true,
-          opacity: 0.85
+          opacity: 0.90
         })
       );
       ring.rotation.x = -Math.PI / 2;
       ring.position.set(0, 0.08, 0);
       group.add(ring);
 
-      // High-resolution premium billboard tag
+      // High-resolution billboard tag
       const texture = createCyberBillboardTexture(
         rank,
         name,
@@ -732,16 +862,26 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
       );
       const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true });
       const sprite = new THREE.Sprite(spriteMat);
-      sprite.scale.set(5.2, 1.62, 1);
-      sprite.position.set(0, 7.8, 0);
+      sprite.scale.set(4.5, 1.38, 1);
+      sprite.position.set(0, baseHeight + 0.6, 0);
       group.add(sprite);
 
-      return { group, sprite, rank, role, metric };
+      return { 
+        group, 
+        sprite, 
+        beamMesh,
+        baseHeight, 
+        currentHeight: baseHeight, 
+        targetHeight: baseHeight, 
+        repelOffsetY: 0,
+        rank, 
+        role, 
+        metric 
+      };
     };
 
-    // Update Base Beacons (Category Top 5 + Selected Province) WITHOUT clearing existing ones
+    // Update Base Beacons with Smart Adaptive Heights to Prevent Overlapping
     const updateBaseBeacons = (metric: MapMetricType, selCode: string) => {
-      // 1. Rank provinces for the PASSED metric strictly using pure computeProvinceMetric
       const ranked = Object.keys(PROVINCE_CODES).map((code) => ({
         code,
         name: PROVINCE_CODES[code],
@@ -781,7 +921,11 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
         }
       }
 
-      // 2. Remove beacons that are no longer in target
+      // Calculate staggered adaptive base heights for any neighboring clusters (e.g. Istanbul / Kocaeli / Bursa)
+      const targetList = Array.from(targetMap.values());
+      const adaptiveHeightMap = assignAdaptiveHeights(targetList);
+
+      // Remove beacons that are no longer in target
       Array.from(activeBaseBeaconsMap.keys()).forEach((code) => {
         if (!targetMap.has(code)) {
           const entry = activeBaseBeaconsMap.get(code);
@@ -793,12 +937,15 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
         }
       });
 
-      // 3. Add or update target beacons
+      // Add or update target beacons
       targetMap.forEach((item, code) => {
+        const assignedBaseH = adaptiveHeightMap.get(code) || 7.8;
         const existing = activeBaseBeaconsMap.get(code);
+
         if (existing) {
-          // If already existing, DO NOT RE-ANIMATE from ground! Keep stable!
-          // Update texture only if metric, rank, or role changed
+          existing.baseHeight = assignedBaseH;
+          existing.targetHeight = assignedBaseH;
+
           if (existing.metric !== metric || existing.role !== item.role || existing.rank !== item.rank) {
             existing.sprite.material.map?.dispose();
             existing.sprite.material.map = createCyberBillboardTexture(
@@ -814,14 +961,14 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
             existing.metric = metric;
           }
         } else {
-          // New beacon: smoothly rises once from ground
           const newEntry = createBeaconObject(
             code,
             item.rank,
             item.name,
             item.value,
             metric,
-            item.role
+            item.role,
+            assignedBaseH
           );
           if (newEntry) {
             baseBeaconsGroup.add(newEntry.group);
@@ -830,7 +977,7 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
         }
       });
 
-      // 4. Update flight arcs between Rank 1 and other leaders
+      // Update flight arcs between Rank 1 and other leaders
       while (dynamicArcsGroup.children.length > 0) {
         dynamicArcsGroup.remove(dynamicArcsGroup.children[0]);
       }
@@ -849,12 +996,12 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
             const midX = (top1X + destX) / 2;
             const midZ = (top1Z + destZ) / 2;
             const dist = Math.hypot(destX - top1X, destZ - top1Z);
-            const arcHeight = Math.min(13, dist * 0.45) + EXTRUDE_DEPTH;
+            const arcApex = Math.min(14, dist * 0.45);
 
             const curve = new THREE.QuadraticBezierCurve3(
-              new THREE.Vector3(top1X, EXTRUDE_DEPTH + 0.3, top1Z),
-              new THREE.Vector3(midX, arcHeight, midZ),
-              new THREE.Vector3(destX, EXTRUDE_DEPTH + 0.3, destZ)
+              new THREE.Vector3(top1X, 0.35, top1Z),
+              new THREE.Vector3(midX, arcApex, midZ),
+              new THREE.Vector3(destX, 0.35, destZ)
             );
 
             const arcPoints = curve.getPoints(45);
@@ -864,7 +1011,7 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
               dashSize: 1.2,
               gapSize: 0.8,
               transparent: true,
-              opacity: 0.65
+              opacity: 0.8
             });
             const line = new THREE.Line(arcGeo, arcMat);
             line.computeLineDistances();
@@ -874,10 +1021,9 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
       }
     };
 
-    // Update Hover Beacon (Only if hovered province is NOT already in Top 5 or Selected)
+    // Update Hover Beacon
     const updateHoverBeacon = (code: string | null) => {
       if (!code || activeBaseBeaconsMap.has(code)) {
-        // If province is already in top 5 or selected, do NOT recreate or bounce it!
         hoverBeaconGroup.visible = false;
         return;
       }
@@ -889,11 +1035,11 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
       }
 
       const [hx, hz] = lonLatToWorld(coords[0], coords[1]);
-      hoverBeaconGroup.position.set(hx, EXTRUDE_DEPTH, hz);
+
+      hoverBeaconGroup.position.set(hx, extrudeDepthRef.current, hz);
       hoverBeaconGroup.scale.set(1, 0.05, 1);
       hoverBeaconGroup.visible = true;
 
-      // Compute rank of hovered province strictly for current metric
       const currentMetric = activeMetricRef.current;
       const ranked = Object.keys(PROVINCE_CODES).map((c) => ({
         code: c,
@@ -904,7 +1050,6 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
       const name = PROVINCE_CODES[code] || 'İL';
       const val = computeProvinceMetric(code, currentMetric);
 
-      // Generate emerald tag for hover
       hoverSprite.material.map?.dispose();
       hoverSprite.material.map = createCyberBillboardTexture(
         rank,
@@ -916,13 +1061,41 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
       hoverSprite.material.needsUpdate = true;
     };
 
+    // Update Province Appearance: AUTHENTIC GOOGLE EARTH SATELLITE TERRAIN PRESERVED!
+    const updateProvincesVisual = () => {
+      const selCode = selectedMeshCodeRef.current;
+
+      provinceMeshesMap.forEach((meshes, code) => {
+        const isSelected = code === selCode;
+
+        meshes.forEach((mesh) => {
+          const mat = mesh.userData?.topMat as THREE.MeshStandardMaterial | undefined;
+          if (!mat) return;
+
+          mat.map = satelliteTexture;
+          mat.color.setHex(0xffffff);
+
+          if (isSelected) {
+            mat.emissive.setHex(0xf59e0b);
+            mat.emissiveIntensity = 0.55;
+          } else {
+            mat.emissive.setHex(0x000000);
+            mat.emissiveIntensity = 0.0;
+          }
+          mat.needsUpdate = true;
+        });
+      });
+    };
+
     updateBaseBeaconsRef.current = updateBaseBeacons;
     updateHoverBeaconRef.current = updateHoverBeacon;
+    updateProvincesVisualRef.current = updateProvincesVisual;
 
-    // Initial build
+    // Initial builds
+    updateProvincesVisual();
     updateBaseBeacons(activeMetricRef.current, selectedMeshCodeRef.current);
 
-    // 8. Raycasting for Mouse Interaction
+    // 9. Raycasting & Interaction State
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2(-999, -999);
     let hoveredMesh: THREE.Mesh | null = null;
@@ -933,20 +1106,26 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
       mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
       raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects(mapGroup.children);
+      const intersects = raycaster.intersectObjects(topGroup.children);
 
       const hitMesh = intersects.find((hit) => hit.object.userData?.code)?.object as THREE.Mesh | undefined;
 
       if (hitMesh !== hoveredMesh) {
-        // Reset old hover
         if (hoveredMesh && hoveredMesh.userData?.topMat) {
           const isSelected = hoveredMesh.userData.code === selectedMeshCodeRef.current;
-          hoveredMesh.userData.topMat.emissive.setHex(isSelected ? 0x664400 : 0x000000);
+          if (isSelected) {
+            hoveredMesh.userData.topMat.emissive.setHex(0xf59e0b);
+            hoveredMesh.userData.topMat.emissiveIntensity = 0.55;
+          } else {
+            hoveredMesh.userData.topMat.emissive.setHex(0x000000);
+            hoveredMesh.userData.topMat.emissiveIntensity = 0.0;
+          }
         }
 
-        // Apply new hover
         if (hitMesh && hitMesh.userData?.topMat) {
-          hitMesh.userData.topMat.emissive.setHex(0x004466);
+          hitMesh.userData.topMat.emissive.setHex(0x00f2fe);
+          hitMesh.userData.topMat.emissiveIntensity = 0.40;
+
           const code = hitMesh.userData.code;
           const name = hitMesh.userData.name;
           const reg = REGIONS.find((r) => r.provinces.some((p) => p.toLowerCase() === name.toLowerCase()));
@@ -960,7 +1139,6 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
             y: event.clientY
           });
 
-          // Show hover beacon only if not already active in top 5 or selected
           if (updateHoverBeaconRef.current) {
             updateHoverBeaconRef.current(code);
           }
@@ -976,7 +1154,7 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
 
     const onClick = (event: MouseEvent) => {
       raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects(mapGroup.children);
+      const intersects = raycaster.intersectObjects(topGroup.children);
       const hitMesh = intersects.find((hit) => hit.object.userData?.code)?.object as THREE.Mesh | undefined;
       if (hitMesh && hitMesh.userData?.code) {
         onSelectProvince(hitMesh.userData.code);
@@ -986,41 +1164,121 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
     renderer.domElement.addEventListener('mousemove', onPointerMove);
     renderer.domElement.addEventListener('click', onClick);
 
-    // 9. Animation Loop (Rising beacons and Zoom-Distance Readability Compensation; NO pulsating ground rings)
+    // 10. Animation Loop with Real-Time Screen-Space Collision Avoidance
     let animId: number;
-    const tempVec = new THREE.Vector3();
+    const tempVecA = new THREE.Vector3();
+    const tempVecB = new THREE.Vector3();
+    const tempCamPos = new THREE.Vector3();
 
     const animate = () => {
       animId = requestAnimationFrame(animate);
 
-      // Damping orbit controls update
       controls.update();
 
       const camPos = camera.position;
+      const domW = renderer.domElement.clientWidth;
+      const domH = renderer.domElement.clientHeight;
 
-      // Animate active base beacons rising smoothly once (NO pulsating rings on ground)
-      activeBaseBeaconsMap.forEach(({ group, sprite }) => {
-        if (group.userData?.isBeacon) {
-          group.scale.y += (group.userData.targetScaleY - group.scale.y) * 0.12;
+      // 1. Gather all active labels and project to 2D screen coordinates
+      const activeItems = Array.from(activeBaseBeaconsMap.values());
+      const screenBoxes = activeItems.map((item) => {
+        // Growth animation
+        if (item.group.userData?.isBeacon) {
+          item.group.scale.y += (item.group.userData.targetScaleY - item.group.scale.y) * 0.12;
         }
 
-        // Distance-based dynamic zoom scale compensation (stays readable when zooming out!)
-        const dist = camPos.distanceTo(group.getWorldPosition(tempVec));
-        const scaleMult = Math.max(0.75, Math.min(2.5, Math.pow(dist / 42, 0.72)));
-        sprite.scale.set(5.2 * scaleMult, 1.62 * scaleMult, 1);
+        // Distance-based billboard scaling
+        const dist = camPos.distanceTo(item.group.getWorldPosition(tempCamPos));
+        const scaleMult = Math.max(0.75, Math.min(2.1, Math.pow(dist / 42, 0.72)));
+        item.sprite.scale.set(4.5 * scaleMult, 1.38 * scaleMult, 1);
+
+        // Project billboard center to screen coordinates
+        item.sprite.getWorldPosition(tempVecA);
+        tempVecA.project(camera);
+
+        const sx = (tempVecA.x * 0.5 + 0.5) * domW;
+        const sy = (-(tempVecA.y * 0.5) + 0.5) * domH;
+        // Approximate pixel bounding box size
+        const cardPxW = 145 * scaleMult;
+        const cardPxH = 46 * scaleMult;
+
+        return {
+          item,
+          sx,
+          sy,
+          cardPxW,
+          cardPxH,
+          z: tempVecA.z,
+          isHovered: hoveredInfo?.code === item.group.userData.code
+        };
       });
 
-      // Animate separate hover beacon
+      // 2. Real-Time Pairwise Screen Collision Detection:
+      // If two cards overlap on screen from the current camera angle, dynamically push them apart!
+      for (let i = 0; i < screenBoxes.length; i++) {
+        for (let j = i + 1; j < screenBoxes.length; j++) {
+          const b1 = screenBoxes[i];
+          const b2 = screenBoxes[j];
+
+          // Skip if behind camera
+          if (b1.z > 1.0 || b2.z > 1.0) continue;
+
+          const dx = Math.abs(b1.sx - b2.sx);
+          const dy = Math.abs(b1.sy - b2.sy);
+          const requiredX = (b1.cardPxW + b2.cardPxW) * 0.52;
+          const requiredY = (b1.cardPxH + b2.cardPxH) * 0.55;
+
+          const overlapX = requiredX - dx;
+          const overlapY = requiredY - dy;
+
+          if (overlapX > 0 && overlapY > 0) {
+            // Overlapping on screen!
+            // Repel vertically in world units proportionally to screen overlap
+            const pushStep = Math.min(1.8, (overlapY / requiredY) * 1.5);
+            if (b1.sy < b2.sy) {
+              // b1 is higher on screen -> push b1 higher in world space
+              b1.item.repelOffsetY += pushStep * 0.5;
+              b2.item.repelOffsetY -= pushStep * 0.5;
+            } else {
+              b1.item.repelOffsetY -= pushStep * 0.5;
+              b2.item.repelOffsetY += pushStep * 0.5;
+            }
+          }
+        }
+      }
+
+      // 3. Smooth Lerp & Leader Beam adjustment
+      activeItems.forEach((item) => {
+        // Clamp repulsion to graceful bounds (-2.0 to +4.5)
+        item.repelOffsetY = Math.max(-2.0, Math.min(4.5, item.repelOffsetY));
+        item.targetHeight = item.baseHeight + item.repelOffsetY;
+
+        // Smooth transition
+        item.currentHeight += (item.targetHeight - item.currentHeight) * 0.14;
+
+        // Update card position and glowing leader beam scale
+        item.sprite.position.y = item.currentHeight + 0.6;
+        item.beamMesh.scale.y = Math.max(0.8, item.currentHeight);
+
+        // Bring hovered card forward in renderOrder
+        const isHovered = hoveredInfo?.code === item.group.userData.code;
+        item.sprite.renderOrder = isHovered ? 999 : item.rank === 1 ? 50 : 20;
+
+        // Soft decay so cards return to their resting tiered height when angle clears
+        item.repelOffsetY *= 0.88;
+      });
+
+      // Hover beacon animation
       if (hoverBeaconGroup.visible) {
         if (hoverBeaconGroup.userData?.isBeacon) {
           hoverBeaconGroup.scale.y += (hoverBeaconGroup.userData.targetScaleY - hoverBeaconGroup.scale.y) * 0.14;
         }
-        const dist = camPos.distanceTo(hoverBeaconGroup.getWorldPosition(tempVec));
-        const scaleMult = Math.max(0.75, Math.min(2.5, Math.pow(dist / 42, 0.72)));
-        hoverSprite.scale.set(5.2 * scaleMult, 1.62 * scaleMult, 1);
+        const dist = camPos.distanceTo(hoverBeaconGroup.getWorldPosition(tempVecB));
+        const scaleMult = Math.max(0.75, Math.min(2.1, Math.pow(dist / 42, 0.72)));
+        hoverSprite.scale.set(4.5 * scaleMult, 1.38 * scaleMult, 1);
+        hoverSprite.renderOrder = 1000;
       }
 
-      // Slowly float dust particles
       particleSystem.rotation.y += 0.0003;
 
       renderer.render(scene, camera);
@@ -1028,7 +1286,7 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
 
     animate();
 
-    // 10. Resize Handlers (Window and Container Observer so map expands dynamically)
+    // 11. Resize Handlers
     const handleResize = () => {
       if (!container || !renderer || !camera) return;
       const w = container.clientWidth;
@@ -1041,6 +1299,9 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
 
     window.addEventListener('resize', handleResize);
 
+    const handleExportEvent = () => exportMapPNG();
+    window.addEventListener('export-map-png', handleExportEvent);
+
     const resizeObserver = new ResizeObserver(() => {
       handleResize();
     });
@@ -1051,6 +1312,7 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
       cancelAnimationFrame(animId);
       resizeObserver.disconnect();
       window.removeEventListener('resize', handleResize);
+      window.removeEventListener('export-map-png', handleExportEvent);
       renderer.domElement.removeEventListener('mousemove', onPointerMove);
       renderer.domElement.removeEventListener('click', onClick);
       if (container.contains(renderer.domElement)) {
@@ -1060,48 +1322,66 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
     };
   }, []);
 
-  // Update Province Highlight Color and Re-trigger Base Markers when Metric or Selection changes
+  // Real-time smooth scaling of outer extrusion depth (60fps)
+  useEffect(() => {
+    extrudeDepthRef.current = extrudeDepth;
+
+    if (topGroupRef.current) {
+      topGroupRef.current.position.y = extrudeDepth;
+    }
+    if (sideWallMeshRef.current) {
+      sideWallMeshRef.current.scale.y = extrudeDepth;
+    }
+    if (outerTopLineRef.current) {
+      outerTopLineRef.current.scale.y = extrudeDepth;
+    }
+    if (baseBeaconsGroupRef.current) {
+      baseBeaconsGroupRef.current.position.y = extrudeDepth;
+    }
+    if (dynamicArcsGroupRef.current) {
+      dynamicArcsGroupRef.current.position.y = extrudeDepth;
+    }
+    if (hoverBeaconGroupRef.current) {
+      hoverBeaconGroupRef.current.position.y = extrudeDepth;
+    }
+  }, [extrudeDepth]);
+
+  // Update Extrude Wall Color in real time (White / Silver / Marble / Ice)
+  useEffect(() => {
+    extrudeWallColorRef.current = extrudeWallColor;
+    const cfg = EXTRUDE_WALL_COLORS[extrudeWallColor];
+
+    if (sideWallMeshRef.current) {
+      const mat = sideWallMeshRef.current.material as THREE.MeshStandardMaterial;
+      if (mat) {
+        mat.color.setHex(cfg.hex);
+        mat.needsUpdate = true;
+      }
+    }
+    if (outerTopLineRef.current) {
+      const lineMat = outerTopLineRef.current.material as THREE.LineBasicMaterial;
+      if (lineMat) {
+        lineMat.color.setHex(cfg.lineHex);
+        lineMat.needsUpdate = true;
+      }
+    }
+  }, [extrudeWallColor]);
+
+  // Update Province Highlight Color when selection or metric changes
   useEffect(() => {
     selectedMeshCodeRef.current = selectedProvinceCode;
     activeMetricRef.current = activeMetric;
 
-    // Update base beacons (Top 5 + Selected) for the selected activeMetric
     if (updateBaseBeaconsRef.current) {
       updateBaseBeaconsRef.current(activeMetric, selectedProvinceCode);
     }
     if (updateHoverBeaconRef.current) {
       updateHoverBeaconRef.current(null);
     }
-
-    const provinceMeshes = provinceMeshesRef.current;
-    provinceMeshes.forEach((meshes, code) => {
-      const isSelected = code === selectedProvinceCode;
-      const val = computeProvinceMetric(code, activeMetric);
-      const ratio = maxVal === minVal ? 0.5 : Math.max(0, Math.min(1, (val - minVal) / (maxVal - minVal)));
-
-      meshes.forEach((mesh) => {
-        const topMat = mesh.userData?.topMat as THREE.MeshStandardMaterial | undefined;
-        if (!topMat) return;
-
-        if (isSelected) {
-          // Glow gold/amber for selected province
-          topMat.emissive.setHex(0xb8860b);
-          topMat.color.setHex(0xffd700);
-        } else {
-          topMat.emissive.setHex(0x000000);
-          if (mapStyle === 'earth') {
-            topMat.color.setHex(0xffffff); // True earth satellite texture
-          } else if (mapStyle === 'cyber') {
-            // Cyber color scale
-            topMat.color.setRGB(0.05 + ratio * 0.1, 0.2 + ratio * 0.8, 0.4 + ratio * 0.6);
-          } else {
-            // Hybrid mode
-            topMat.color.setRGB(0.6 + ratio * 0.4, 0.8 + ratio * 0.2, 1.0);
-          }
-        }
-      });
-    });
-  }, [selectedProvinceCode, activeMetric, mapStyle, minVal, maxVal]);
+    if (updateProvincesVisualRef.current) {
+      updateProvincesVisualRef.current();
+    }
+  }, [selectedProvinceCode, activeMetric]);
 
   // View reset helper
   const resetCamera = () => {
@@ -1116,25 +1396,14 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
     controlsRef.current.target.set(0, 0, 0);
   };
 
-  const formatMetricVal = (v: number) => {
-    if (activeMetric === 'women') return `%${v.toFixed(1)}`;
-    if (activeMetric === 'export') {
-      if (v >= 1e9) return `$${(v / 1e9).toFixed(2)}B`;
-      if (v >= 1e6) return `$${(v / 1e6).toFixed(1)}M`;
-      return `$${v.toLocaleString('tr-TR')}`;
-    }
-    if (activeMetric === 'gdp') return `$${v.toLocaleString('tr-TR')}`;
-    return v.toLocaleString('tr-TR');
-  };
-
   return (
-    <div className="relative w-full h-full min-h-[480px] flex flex-col items-center justify-center overflow-hidden bg-[#030814] rounded-sm border border-cyan-500/30 select-none">
+    <div className="relative w-full h-full min-h-[480px] flex flex-col items-center justify-center overflow-hidden bg-[#060d1a] rounded-sm border border-cyan-500/40 select-none">
       
       {/* 3D Canvas Mount */}
       <div ref={mountRef} className="w-full h-full flex-1 cursor-grab active:cursor-grabbing relative" />
 
       {/* Top Left: Map Metric Selectors */}
-      <div className="absolute top-3 left-4 z-20 flex flex-wrap items-center gap-1.5 bg-[#030919]/90 backdrop-blur-md p-1.5 rounded border border-cyan-500/40 shadow-[0_0_15px_rgba(0,242,254,0.15)]">
+      <div className="absolute top-3 left-4 z-20 flex flex-wrap items-center gap-1.5 bg-[#0b172a]/90 backdrop-blur-md p-1.5 rounded border border-cyan-500/50 shadow-[0_0_20px_rgba(0,242,254,0.18)]">
         {[
           { id: 'export' as MapMetricType, label: 'İHRACAT' },
           { id: 'osb' as MapMetricType, label: 'OSB SAYISI' },
@@ -1147,8 +1416,8 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
             onClick={() => onMetricChange && onMetricChange(btn.id)}
             className={`px-2.5 py-1 text-xs font-['Rajdhani'] font-bold tracking-wider transition-all rounded-xs ${
               activeMetric === btn.id
-                ? 'bg-cyan-500 text-[#030919] shadow-[0_0_10px_#00f2fe]'
-                : 'text-cyan-300/80 hover:text-cyan-100 hover:bg-cyan-950/40'
+                ? 'bg-cyan-500 text-slate-950 font-bold shadow-[0_0_12px_#00f2fe]'
+                : 'text-cyan-300 hover:text-white hover:bg-cyan-950/60'
             }`}
           >
             {btn.label}
@@ -1156,111 +1425,166 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
         ))}
       </div>
 
-      {/* Top Right: 3D Camera Controls & Earth Mode Switcher */}
-      <div className="absolute top-3 right-4 z-20 flex items-center gap-1.5 bg-[#030919]/90 backdrop-blur-md p-1.5 rounded border border-cyan-500/40 text-cyan-300">
+      {/* Top Right: Camera, Extrude Pedestal Settings & PNG Export */}
+      <div className="absolute top-3 right-4 z-20 flex items-center gap-1.5 bg-[#0b172a]/90 backdrop-blur-md p-1.5 rounded border border-cyan-500/50 text-cyan-300 shadow-lg">
+        {/* PNG Export */}
+        <button
+          onClick={exportMapPNG}
+          className="flex items-center gap-1 px-2 py-1 text-xs font-['Rajdhani'] font-bold rounded transition-colors hover:bg-cyan-500/20 text-cyan-300 hover:text-white"
+          title="Google Earth 3D Harita Görüntüsünü PNG Olarak İndir"
+        >
+          <Camera className="w-3.5 h-3.5 text-cyan-400" />
+          <span className="hidden sm:inline">PNG İNDİR</span>
+        </button>
+
+        {/* 3D Extrude Size & Light-Color Pedestal Settings */}
+        <div className="relative">
+          <button
+            onClick={() => setIsExtrudeOpen(!isExtrudeOpen)}
+            className={`flex items-center gap-1 px-2 py-1 text-xs font-['Rajdhani'] font-bold rounded transition-colors ${
+              isExtrudeOpen
+                ? 'bg-cyan-500 text-slate-950 shadow-[0_0_10px_#00f2fe]'
+                : 'text-cyan-300 hover:text-white hover:bg-cyan-500/20'
+            }`}
+            title="3D Harita Dış Sınır Kabartma Derinliği ve Açık Kaide Rengi"
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">KABARTMA: {extrudeDepth.toFixed(1)}x</span>
+          </button>
+
+          {/* Slider Popover with Light-Color Extrude Options */}
+          {isExtrudeOpen && (
+            <div 
+              ref={extrudePopoverRef}
+              className="absolute top-full right-0 mt-2 z-50 w-72 p-3 bg-[#071328]/95 backdrop-blur-xl border border-cyan-400/50 shadow-[0_8px_32px_rgba(0,0,0,0.5)] rounded-xs flex flex-col gap-2.5 select-none text-white"
+            >
+              <div className="flex items-center justify-between text-xs font-['Rajdhani'] font-bold">
+                <span className="flex items-center gap-1.5 uppercase tracking-wider text-cyan-300">
+                  <Sliders className="w-3.5 h-3.5 text-cyan-400" />
+                  3D Türkiye Dış Kaide
+                </span>
+                <span className="font-mono bg-cyan-950/80 text-cyan-300 px-2 py-0.5 border border-cyan-500/30 rounded-xs text-[11px] font-bold">
+                  {extrudeDepth.toFixed(1)}x
+                </span>
+              </div>
+
+              <p className="text-[11px] font-['Rajdhani'] text-slate-300 -mt-1">
+                Türkiye&apos;nin en dış kıyı ve kara sınırlarının 3D derinlik boyutu:
+              </p>
+
+              {/* Minimalist Slider */}
+              <div className="py-1">
+                <input
+                  type="range"
+                  min="0.2"
+                  max="3.5"
+                  step="0.05"
+                  value={extrudeDepth}
+                  onChange={(e) => setExtrudeDepth(parseFloat(e.target.value))}
+                  className="w-full h-2 rounded-full appearance-none cursor-pointer focus:outline-none accent-cyan-500"
+                  style={{
+                    background: `linear-gradient(to right, #00f2fe 0%, #00f2fe ${((extrudeDepth - 0.2) / (3.5 - 0.2)) * 100}%, rgba(100, 116, 139, 0.4) ${((extrudeDepth - 0.2) / (3.5 - 0.2)) * 100}%, rgba(100, 116, 139, 0.4) 100%)`
+                  }}
+                />
+                <div className="flex justify-between items-center text-[10px] font-mono text-slate-400 mt-1">
+                  <span>0.2x (İnce Kaide)</span>
+                  <span>1.4x (Varsayılan)</span>
+                  <span>3.5x (Yüksek 3D Blok)</span>
+                </div>
+              </div>
+
+              {/* Extrude Side Wall Light Color Options */}
+              <div className="pt-2 border-t border-cyan-500/20">
+                <span className="text-[11px] font-['Rajdhani'] font-bold text-slate-300 block mb-1.5">
+                  Kaide Açık Rengi:
+                </span>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {(Object.keys(EXTRUDE_WALL_COLORS) as ExtrudeWallColorType[]).map((clrKey) => (
+                    <button
+                      key={clrKey}
+                      onClick={() => setExtrudeWallColor(clrKey)}
+                      className={`flex items-center gap-1.5 px-2 py-1 text-[11px] font-['Rajdhani'] font-bold rounded-xs border transition-colors ${
+                        extrudeWallColor === clrKey
+                          ? 'bg-cyan-500/30 border-cyan-400 text-white'
+                          : 'bg-[#0f2444] border-cyan-500/20 text-slate-300 hover:text-white'
+                      }`}
+                    >
+                      <span 
+                        className="w-2.5 h-2.5 rounded-full border border-black/40 shadow-xs" 
+                        style={{ backgroundColor: '#' + EXTRUDE_WALL_COLORS[clrKey].hex.toString(16).padStart(6, '0') }} 
+                      />
+                      <span>{EXTRUDE_WALL_COLORS[clrKey].name.split('/')[0]}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Quick Presets */}
+              <div className="grid grid-cols-3 gap-1 pt-1.5 border-t border-cyan-500/20">
+                {[
+                  { label: 'Hafif 0.5x', val: 0.5 },
+                  { label: 'Normal 1.4x', val: 1.4 },
+                  { label: 'Yüksek 2.8x', val: 2.8 }
+                ].map((preset) => (
+                  <button
+                    key={preset.val}
+                    onClick={() => setExtrudeDepth(preset.val)}
+                    className={`py-1 text-[11px] font-['Rajdhani'] font-bold rounded-xs transition-colors ${
+                      Math.abs(extrudeDepth - preset.val) < 0.1
+                        ? 'bg-cyan-500 text-slate-950 font-bold'
+                        : 'bg-[#0f2444] border border-cyan-500/20 text-cyan-300 hover:text-white'
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
         <button
           onClick={resetCamera}
-          className="flex items-center gap-1 px-2 py-1 text-xs font-['Rajdhani'] font-bold hover:text-white hover:bg-cyan-500/20 rounded transition-colors"
-          title="3D Açılı Görünüm"
+          className="flex items-center gap-1 px-2 py-1 text-xs font-['Rajdhani'] font-bold rounded transition-colors hover:text-white hover:bg-cyan-500/20 text-cyan-300"
+          title="Kamera Açısını Sıfırla (Perspektif)"
         >
-          <RotateCcw className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">3D AÇI</span>
+          <RotateCcw className="w-3.5 h-3.5 text-cyan-400" />
+          <span className="hidden sm:inline">SIFIRLA</span>
         </button>
 
         <button
           onClick={setTopDownView}
-          className="flex items-center gap-1 px-2 py-1 text-xs font-['Rajdhani'] font-bold hover:text-white hover:bg-cyan-500/20 rounded transition-colors"
-          title="Kuşbakışı (2D Düz)"
+          className="flex items-center gap-1 px-2 py-1 text-xs font-['Rajdhani'] font-bold rounded transition-colors hover:text-white hover:bg-cyan-500/20 text-cyan-300"
+          title="Kuşbakışı (2D/3D Dik Açı) Görünüme Geç"
         >
-          <Compass className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">KUŞBAKIŞI</span>
+          <Compass className="w-3.5 h-3.5 text-cyan-400" />
+          <span className="hidden sm:inline">DİK AÇI</span>
         </button>
-
-        {/* Style mode toggle: Earth vs Cyber */}
-        <div className="flex items-center bg-[#07193b] p-0.5 rounded border border-cyan-500/20 ml-1">
-          <button
-            onClick={() => setMapStyle('earth')}
-            className={`px-2 py-0.5 text-[11px] font-['Rajdhani'] font-bold rounded-xs transition-colors ${
-              mapStyle === 'earth' ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-cyan-300/70 hover:text-white'
-            }`}
-            title="Google Earth / Topografik Kabartma"
-          >
-            UYDU/EARTH
-          </button>
-          <button
-            onClick={() => setMapStyle('cyber')}
-            className={`px-2 py-0.5 text-[11px] font-['Rajdhani'] font-bold rounded-xs transition-colors ${
-              mapStyle === 'cyber' ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-cyan-300/70 hover:text-white'
-            }`}
-            title="Siber Isı Haritası"
-          >
-            SİBER
-          </button>
-        </div>
       </div>
 
-      {/* Floating 3D Tooltip */}
+      {/* Floating Hover Info Card */}
       {hoveredInfo && (
-        <div 
-          className="fixed pointer-events-none z-50 px-3.5 py-2.5 bg-[#061533]/95 border border-cyan-400/80 shadow-[0_0_25px_rgba(0,242,254,0.5)] rounded-xs backdrop-blur-md"
-          style={{
-            left: `${hoveredInfo.x + 16}px`,
-            top: `${hoveredInfo.y - 48}px`
-          }}
+        <div
+          className="fixed pointer-events-none z-50 p-2.5 rounded shadow-2xl backdrop-blur-md border border-cyan-400 bg-[#040e20]/95 text-white text-xs font-['Rajdhani'] transition-transform transform -translate-x-1/2 -translate-y-full -mt-3 select-none shadow-[0_0_20px_rgba(0,242,254,0.35)]"
+          style={{ left: `${hoveredInfo.x}px`, top: `${hoveredInfo.y}px` }}
         >
-          <div className="flex items-center gap-2 text-xs font-['Rajdhani'] font-bold text-white uppercase tracking-wider">
-            <MapPin className="w-3.5 h-3.5 text-cyan-400" />
-            <span>{hoveredInfo.name}</span>
-            <span className="text-cyan-400 text-[11px] font-mono">({hoveredInfo.code})</span>
+          <div className="flex items-center gap-2 font-bold text-sm tracking-wider">
+            <span className="text-cyan-400 font-mono">#{hoveredInfo.code}</span>
+            <span className="text-white">{hoveredInfo.name.toUpperCase()}</span>
             {hoveredInfo.agency && (
-              <span className="ml-1 text-[10px] px-1.5 py-0.5 bg-cyan-950 text-cyan-300 border border-cyan-500/40">
+              <span className="text-[10px] px-1.5 py-0.5 bg-cyan-950 text-cyan-300 border border-cyan-500/40 rounded-xs">
                 {hoveredInfo.agency}
               </span>
             )}
           </div>
-          <div className="mt-1 text-base font-['Orbitron'] font-bold text-cyan-200">
-            {formatMetricDisplay(activeMetric, hoveredInfo.value)}
+          <div className="mt-1 flex items-center justify-between gap-4 font-mono text-[11px]">
+            <span className="text-slate-400">{getCategoryLabel(activeMetric)}:</span>
+            <span className="text-amber-400 font-bold">
+              {formatMetricDisplay(activeMetric, hoveredInfo.value)}
+            </span>
           </div>
         </div>
       )}
-
-      {/* Bottom Unified HUD Bar - Zero Overlap Layout */}
-      <div className="absolute bottom-2.5 left-3 right-3 z-20 flex flex-col md:flex-row items-center justify-between gap-2 pointer-events-none">
-        {/* Left: Metric Range Scale */}
-        <div className="pointer-events-auto bg-[#030919]/90 backdrop-blur-md px-3.5 py-1.5 rounded-xs border border-cyan-500/30 flex items-center gap-3">
-          <div className="text-[10px] font-mono text-cyan-300">
-            <span>MİN: {formatMetricVal(minVal)}</span>
-          </div>
-          <div className="w-32 h-1.5 rounded-xs bg-gradient-to-r from-[#061324] via-[#0084c4] to-[#00f2fe] border border-cyan-400/40" />
-          <div className="text-[10px] font-mono text-cyan-300">
-            <span>MAKS: {formatMetricVal(maxVal)}</span>
-          </div>
-        </div>
-
-        {/* Center: Mouse 3D Navigation Guide */}
-        <div className="pointer-events-auto hidden lg:flex items-center gap-3 text-[10px] font-mono text-cyan-300/80 bg-[#030919]/85 backdrop-blur-md px-4 py-1.5 rounded-full border border-cyan-500/25">
-          <span className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
-            <strong className="text-white">Sol Tık:</strong> 3D Çevir
-          </span>
-          <span>·</span>
-          <span><strong className="text-white">Sağ Tık:</strong> Serbest Taşı</span>
-          <span>·</span>
-          <span><strong className="text-white">Tekerlek:</strong> Zoom</span>
-        </div>
-
-        {/* Right: Selected Province & Rank Badge */}
-        <div className="pointer-events-auto text-xs font-mono text-cyan-300 bg-[#030919]/90 backdrop-blur-md px-3.5 py-1.5 rounded-xs border border-cyan-500/30 flex items-center gap-2">
-          <span className="w-2 h-2 bg-amber-400 rounded-full shadow-[0_0_8px_#f59e0b]" />
-          <span>
-            SEÇİLİ: <strong className="text-white">{PROVINCE_CODES[selectedProvinceCode] || 'İSTANBUL'}</strong>
-            <span className="text-[10px] text-amber-400 font-bold ml-1.5">
-              (#{selectedRank} · {formatMetricShort(activeMetric, computeProvinceMetric(selectedProvinceCode, activeMetric))})
-            </span>
-          </span>
-        </div>
-      </div>
-
     </div>
   );
 };
