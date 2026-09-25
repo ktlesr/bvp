@@ -9,9 +9,9 @@ import {
   TechDecorationLine 
 } from './components/DataVDecorations';
 import { 
-  TurkeyMap, 
+  TurkeyMap3D as TurkeyMap, 
   MapMetricType 
-} from './components/TurkeyMap';
+} from './components/TurkeyMap3D';
 import { RankingList } from './components/RankingList';
 import { TrendChart } from './components/TrendChart';
 import { CompositionChart } from './components/CompositionChart';
@@ -155,11 +155,11 @@ export default function App() {
         />
       </div>
 
-      {/* 3. Main Data Screen Grid (Left 28% - Center 44% - Right 28%) */}
-      <main className="flex-1 px-3 md:px-6 py-2 grid grid-cols-1 lg:grid-cols-12 gap-3 z-10">
+      {/* 3. Main Data Screen (Left & Right scalable sidebars, Center Map expands dynamically) */}
+      <main className="flex-1 px-2.5 md:px-4 lg:px-6 py-2 flex flex-col lg:flex-row gap-3 z-10 min-h-0">
         
-        {/* Left Column (3.5 cols on desktop): Leaderboard & Composition */}
-        <div className="lg:col-span-3 flex flex-col gap-3">
+        {/* Left Column: Leaderboard & Composition (Scales gracefully: 280px -> 320px -> 360px) */}
+        <div className="w-full lg:w-[280px] xl:w-[320px] 2xl:w-[360px] shrink-0 flex flex-col gap-3">
           {/* Box 1: Top Provinces Leaderboard */}
           <BorderBox
             title={`${activeMetric.toUpperCase()} LİDERLERİ`}
@@ -185,10 +185,10 @@ export default function App() {
           </BorderBox>
         </div>
 
-        {/* Center Column (5.5 cols on desktop): Main Map & Key Hub Highlights */}
-        <div className="lg:col-span-6 flex flex-col gap-3">
-          {/* Main Interactive Map */}
-          <div className="flex-1 min-h-[460px] flex flex-col">
+        {/* Center Column: Map Expands to Fill All Available Screen Space (flex-1 min-w-0) */}
+        <div className="flex-1 min-w-0 flex flex-col gap-3">
+          {/* Main Interactive Map (scales with viewport height) */}
+          <div className="flex-1 min-h-[480px] xl:min-h-[540px] 2xl:min-h-[620px] flex flex-col">
             <TurkeyMap
               selectedProvinceCode={selectedProvinceCode}
               onSelectProvince={(code) => setSelectedProvinceCode(code)}
@@ -198,7 +198,7 @@ export default function App() {
           </div>
 
           {/* Center Bottom: Quick Selected Province Highlight Bar */}
-          <div className="bg-[#05132d]/85 backdrop-blur-md border border-cyan-500/30 p-3 rounded-xs flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="bg-[#05132d]/85 backdrop-blur-md border border-cyan-500/30 p-2.5 rounded-xs flex flex-wrap items-center justify-between gap-3 text-xs">
             <div className="flex items-center gap-3">
               <span className="w-2.5 h-6 bg-cyan-400 rounded-xs shadow-[0_0_10px_#00f2fe]" />
               <div>
@@ -231,8 +231,8 @@ export default function App() {
           </div>
         </div>
 
-        {/* Right Column (3 cols on desktop): Trends, Radar & Event Ticker */}
-        <div className="lg:col-span-3 flex flex-col gap-3">
+        {/* Right Column: Trends, Radar & Event Ticker (Scales gracefully: 280px -> 320px -> 360px) */}
+        <div className="w-full lg:w-[280px] xl:w-[320px] 2xl:w-[360px] shrink-0 flex flex-col gap-3">
           {/* Box 3: Multi-Year Trend Chart */}
           <BorderBox
             title="DÖNEMSEL TREND ANALİZİ"

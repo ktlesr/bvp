@@ -1,13 +1,10 @@
-// Türkiye Dış Ticaret (İhracat ve İthalat USD) 81 İl (2022-2026)
-export interface ProvinceTrade {
-  exportUsd: number[]; // [2022, 2023, 2024, 2025, 2026]
-  importUsd: number[];
-  activityExportUsd: number[];
-}
+// Türkiye Dış Ticaret (İhracat ve İthalat USD) 81 İl
+// Kesinleşmiş tam takvim yılları: 2022, 2023, 2024, 2025 (2026 yılı henüz tamamlanmadığı için önceki yıl 2025 zirve baz alınır)
+export const TRADE_COMPLETED_YEARS = [2022, 2023, 2024, 2025];
+export const TRADE_ALL_YEARS = [2022, 2023, 2024, 2025, 2026];
+export const TRADE_YEARS = TRADE_COMPLETED_YEARS; // Default to completed years
 
-export const TRADE_YEARS = [2022, 2023, 2024, 2025, 2026];
-
-// Top provinces export USD (annual values in USD)
+// Export USD values for [2022, 2023, 2024, 2025, 2026(kısmi)]
 export const EXPORT_USD_DATA: Record<string, number[]> = {
   "1": [3117028656, 2977519573, 3112322671, 3160773410, 858260473],
   "2": [97263046, 64731625, 55578960, 65877543, 10284495],
