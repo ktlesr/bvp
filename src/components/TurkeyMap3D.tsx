@@ -373,8 +373,8 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
   const mountRef = useRef<HTMLDivElement>(null);
   
   // 3D Extrusion Depth
-  const [extrudeDepth, setExtrudeDepth] = useState<number>(1.4);
-  const [extrudeWallColor, setExtrudeWallColor] = useState<ExtrudeWallColorType>('white');
+  const [extrudeDepth, setExtrudeDepth] = useState<number>(0.7);
+  const [extrudeWallColor, setExtrudeWallColor] = useState<ExtrudeWallColorType>('marble');
   const [isExtrudeOpen, setIsExtrudeOpen] = useState<boolean>(false);
   const extrudePopoverRef = useRef<HTMLDivElement>(null);
 
@@ -1488,7 +1488,7 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
                 />
                 <div className="flex justify-between items-center text-[10px] font-mono text-slate-400 mt-1">
                   <span>0.2x (İnce Kaide)</span>
-                  <span>1.4x (Varsayılan)</span>
+                  <span>0.7x (Varsayılan)</span>
                   <span>3.5x (Yüksek 3D Blok)</span>
                 </div>
               </div>
@@ -1522,9 +1522,9 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
               {/* Quick Presets */}
               <div className="grid grid-cols-3 gap-1 pt-1.5 border-t border-cyan-500/20">
                 {[
-                  { label: 'Hafif 0.5x', val: 0.5 },
-                  { label: 'Normal 1.4x', val: 1.4 },
-                  { label: 'Yüksek 2.8x', val: 2.8 }
+                  { label: 'Hafif 0.4x', val: 0.4 },
+                  { label: 'Varsayılan 0.7x', val: 0.7 },
+                  { label: 'Yüksek 2.0x', val: 2.0 }
                 ].map((preset) => (
                   <button
                     key={preset.val}
