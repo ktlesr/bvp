@@ -6,16 +6,30 @@ import {
   Compass, 
   Camera,
   Sliders,
-  Layers
+  Layers,
+  ChevronDown,
+  Search,
+  Database,
+  Check,
+  Sparkles,
+  Globe,
+  Factory,
+  Users,
+  PieChart
 } from 'lucide-react';
 import defaultGeoData from '../data/nuts3.geo.json';
 import { PROVINCE_CODES, REGIONS } from '../data/regions';
-import { getProvinceExport } from '../data/tradeData';
-import { getProvinceOSB } from '../data/osbData';
-import { getWomenShare } from '../data/womenTradeData';
-import { getProvinceOverview } from '../data/demographyData';
+import { 
+  MapMetricType, 
+  METRIC_CATALOG, 
+  computeProvinceMetric, 
+  getCategoryLabel, 
+  formatMetricDisplay 
+} from '../data/metricCatalog';
+import { DashboardMode } from './Header';
 
-export type MapMetricType = 'export' | 'osb' | 'women' | 'population' | 'gdp';
+export type { MapMetricType };
+export { computeProvinceMetric };
 
 // Light-color themes specifically for the 3D outer extrude pedestal walls
 export type ExtrudeWallColorType = 'white' | 'silver' | 'marble' | 'ice';
@@ -25,6 +39,11 @@ interface TurkeyMap3DProps {
   onSelectProvince: (code: string) => void;
   activeMetric: MapMetricType;
   onMetricChange?: (metric: MapMetricType) => void;
+  currentMode?: DashboardMode;
+  onModeChange?: (mode: DashboardMode) => void;
+  isAutoPlay?: boolean;
+  autoPlayProgress?: number;
+  autoPlayStepTitle?: string;
 }
 
 // Helper to project lon/lat to 3D world coordinates
@@ -32,6 +51,10 @@ const CENTER_LON = 35.24;
 const CENTER_LAT = 38.96;
 const SCALE_X = 2.8;
 const SCALE_Z = 3.6;
+
+// Default canonical perspective camera view
+const DEFAULT_CAM_POS = new THREE.Vector3(0, 38, 48);
+const DEFAULT_CAM_TARGET = new THREE.Vector3(0, 0, 0);
 
 // Exact Web Mercator bounds of the authentic Google Earth satellite texture (/turkey_satellite.jpg)
 // Downloaded from Esri World Imagery (ArcGIS DigitalGlobe / Maxar satellite source used by Google Earth)
@@ -44,24 +67,6 @@ function lonLatToWorld(lon: number, lat: number): [number, number] {
   const x = (lon - CENTER_LON) * SCALE_X;
   const z = -(lat - CENTER_LAT) * SCALE_Z;
   return [x, z];
-}
-
-// Pure function: calculate province metric without depending on React closures
-export function computeProvinceMetric(code: string, metric: MapMetricType): number {
-  switch (metric) {
-    case 'export':
-      return getProvinceExport(code, 3); // 2025
-    case 'osb':
-      return getProvinceOSB(code).count;
-    case 'women':
-      return getWomenShare(code, 7);
-    case 'population':
-      return getProvinceOverview(code).population;
-    case 'gdp':
-      return getProvinceOverview(code).gdpPerCapitaUsd;
-    default:
-      return getProvinceExport(code, 3);
-  }
 }
 
 // Precompute centroids for all 81 provinces
@@ -116,32 +121,6 @@ if (defaultGeoData && (defaultGeoData as any).features) {
       }
     }
   });
-}
-
-function getCategoryLabel(metric: MapMetricType): string {
-  switch (metric) {
-    case 'export': return 'İhracat Hacmi';
-    case 'osb': return 'Sanayi Bölgesi';
-    case 'women': return 'Kadın İhracat';
-    case 'population': return 'Toplam Nüfus';
-    case 'gdp': return 'GSYH / Kişi';
-  }
-}
-
-function formatMetricDisplay(metric: MapMetricType, val: number): string {
-  if (metric === 'export') {
-    if (val >= 1e9) return `$${(val / 1e9).toFixed(2)} Milyar`;
-    if (val >= 1e6) return `$${(val / 1e6).toFixed(1)} Milyon`;
-    return `$${val.toLocaleString('tr-TR')}`;
-  }
-  if (metric === 'osb') return `${val} OSB Bölgesi`;
-  if (metric === 'women') return `%${val.toFixed(1)} Kadın Payı`;
-  if (metric === 'population') {
-    if (val >= 1e6) return `${(val / 1e6).toFixed(2)}M Kişi`;
-    return `${(val / 1e3).toFixed(0)}K Kişi`;
-  }
-  if (metric === 'gdp') return `$${val.toLocaleString('tr-TR')} GSYH`;
-  return String(val);
 }
 
 // Generate Compact, High-Density 3D Billboard Tag (480x148 Hi-Res Canvas)
@@ -364,11 +343,72 @@ function assignAdaptiveHeights(items: { code: string; rank: number }[]): Map<str
   return result;
 }
 
+const CANVAS_THEMES: {
+  id: DashboardMode;
+  label: string;
+  icon: React.ReactNode;
+  items: {
+    id: MapMetricType;
+    label: string;
+    unit: string;
+    source: string;
+    desc: string;
+  }[];
+}[] = [
+  {
+    id: 'trade',
+    label: 'DIŞ TİCARET',
+    icon: <Globe className="w-3.5 h-3.5" />,
+    items: [
+      { id: 'export', label: 'Yıllık İhracat Hacmi', unit: '$', source: 'TİM / Ticaret Bak.', desc: '2025 resmi il bazlı ihracat tutarı' },
+      { id: 'women', label: 'Kadın İhracatçı & Girişimci', unit: '% Pay', source: 'İhracatçılar Meclisi', desc: 'İhracatta kadın ortaklı/yönetimli firma payı' },
+    ]
+  },
+  {
+    id: 'osb',
+    label: 'SANAYİ & OSB',
+    icon: <Factory className="w-3.5 h-3.5" />,
+    items: [
+      { id: 'osb', label: 'Toplam OSB Sayısı', unit: 'Adet', source: 'OSBÜK / Sanayi Bak.', desc: 'Bakanlık tescilli organize sanayi bölgesi adedi' },
+      { id: 'osb_area', label: 'Toplam OSB Alanı', unit: 'Hektar', source: 'Sanayi ve Teknoloji Bak.', desc: 'Organize sanayi bölgeleri toplam yüzölçümü' },
+      { id: 'osb_parsel', label: 'Sanayi Parsel Sayısı', unit: 'Parsel', source: 'OSB Bilgi Sistemi', desc: 'Üretime hazır ve tahsis edilmiş sanayi parselleri' },
+      { id: 'osb_active', label: 'İşletmedeki Aktif OSB', unit: 'Aktif OSB', source: 'Sanayi Genel Müd.', desc: 'Fabrikaların fiilen üretime geçtiği aktif OSB sayısı' },
+    ]
+  },
+  {
+    id: 'women',
+    label: 'KADIN İSTİHDAMI',
+    icon: <Users className="w-3.5 h-3.5" />,
+    items: [
+      { id: 'women', label: 'Kadın Girişimci & İhracatçı', unit: '% Oran', source: 'Ticaret Bakanlığı', desc: 'İhracatçı kadın işletme ve yönetici payı' },
+      { id: 'employment', label: 'Kadın & Genel İstihdam Oranı', unit: '% Oran', source: 'TÜİK İşgücü', desc: '15+ yaş nüfusun çalışma hayatına katılım oranı' },
+    ]
+  },
+  {
+    id: 'demography',
+    label: 'DEMOGRAFİ & SES',
+    icon: <PieChart className="w-3.5 h-3.5" />,
+    items: [
+      { id: 'gdp', label: 'Kişi Başına GSYH', unit: '$ / Kişi', source: 'TÜİK İl GSYH', desc: 'Kişi başına düşen gayrisafi yurtiçi hasıla düzeyi' },
+      { id: 'ses', label: 'SEGE Gelişmişlik Endeksi', unit: 'Endeks Skoru', source: 'Kalkınma Ajansları', desc: 'Sanayi ve Teknoloji Bakanlığı SEGE Skoru' },
+      { id: 'population', label: 'Toplam İl Nüfusu', unit: 'Kişi', source: 'TÜİK ADNKS', desc: 'Adrese Dayalı Nüfus Kayıt Sistemi verisi' },
+      { id: 'unemployment', label: 'İşsizlik Oranı', unit: '% Oran', source: 'TÜİK & İŞKUR', desc: 'İl bazında kayıtlı iş arayan işsizlik payı' },
+      { id: 'education', label: 'Ortalama Eğitim Süresi', unit: 'Yıl', source: 'MEB & TÜİK', desc: '25 yaş üzeri ortalama tamamlanan okul yılı' },
+      { id: 'hospital_beds', label: '10.000 Kişiye Düşen Yatak', unit: 'Yatak', source: 'Sağlık Bakanlığı', desc: 'İldeki kamu ve özel hastane yatak kapasitesi' },
+    ]
+  }
+];
+
 export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
   selectedProvinceCode,
   onSelectProvince,
   activeMetric,
-  onMetricChange
+  onMetricChange,
+  currentMode,
+  onModeChange,
+  isAutoPlay = false,
+  autoPlayProgress = 0,
+  autoPlayStepTitle
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   
@@ -377,6 +417,29 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
   const [extrudeWallColor, setExtrudeWallColor] = useState<ExtrudeWallColorType>('marble');
   const [isExtrudeOpen, setIsExtrudeOpen] = useState<boolean>(false);
   const extrudePopoverRef = useRef<HTMLDivElement>(null);
+
+  // Category Dropdown State ('trade' | 'osb' | 'women' | 'demography' | null)
+  const [openCategory, setOpenCategory] = useState<DashboardMode | null>(null);
+  const categoryNavRef = useRef<HTMLDivElement>(null);
+
+  // Indicator Catalog Dropdown State
+  const [isCatalogOpen, setIsCatalogOpen] = useState<boolean>(false);
+  const [catalogSearch, setCatalogSearch] = useState<string>('');
+  const catalogPopoverRef = useRef<HTMLDivElement>(null);
+
+  const filteredCatalog = useMemo(() => {
+    if (!catalogSearch.trim()) return METRIC_CATALOG;
+    const q = catalogSearch.toLowerCase();
+    return METRIC_CATALOG.map((cat) => ({
+      ...cat,
+      items: cat.items.filter(
+        (it) =>
+          it.label.toLowerCase().includes(q) ||
+          it.desc.toLowerCase().includes(q) ||
+          it.shortLabel.toLowerCase().includes(q)
+      )
+    })).filter((cat) => cat.items.length > 0);
+  }, [catalogSearch]);
 
   const [hoveredInfo, setHoveredInfo] = useState<{
     code: string;
@@ -425,14 +488,36 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
       if (extrudePopoverRef.current && !extrudePopoverRef.current.contains(event.target as Node)) {
         setIsExtrudeOpen(false);
       }
+      if (catalogPopoverRef.current && !catalogPopoverRef.current.contains(event.target as Node)) {
+        setIsCatalogOpen(false);
+      }
+      if (categoryNavRef.current && !categoryNavRef.current.contains(event.target as Node)) {
+        setOpenCategory(null);
+      }
     };
-    if (isExtrudeOpen) {
+    if (isExtrudeOpen || isCatalogOpen || openCategory !== null) {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [isExtrudeOpen]);
+  }, [isExtrudeOpen, isCatalogOpen, openCategory]);
+
+  // Cinematic Orbit when AutoPlay is enabled & Smooth Camera Reset when Paused
+  const isResettingRef = useRef<boolean>(false);
+  const prevAutoPlayRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    if (controlsRef.current) {
+      controlsRef.current.autoRotate = !!isAutoPlay;
+      controlsRef.current.autoRotateSpeed = 0.5;
+    }
+    // When paused, smoothly return camera back to default front-facing perspective
+    if (prevAutoPlayRef.current && !isAutoPlay) {
+      isResettingRef.current = true;
+    }
+    prevAutoPlayRef.current = isAutoPlay;
+  }, [isAutoPlay]);
 
   // Find min, max, and selected province rank using pure computeProvinceMetric
   const { minVal, maxVal, selectedRank } = useMemo(() => {
@@ -509,6 +594,10 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
     controls.minDistance = 14;
     controls.maxDistance = 130;
     controls.maxPolarAngle = Math.PI / 2.05;
+
+    controls.addEventListener('start', () => {
+      isResettingRef.current = false;
+    });
 
     // 3. Multi-Point Bright Studio Lighting
     const ambientLight = new THREE.AmbientLight(0xffffff, 1.45);
@@ -1173,6 +1262,17 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
     const animate = () => {
       animId = requestAnimationFrame(animate);
 
+      // Smooth camera glide back to default canonical perspective when resetting or pausing
+      if (isResettingRef.current && cameraRef.current && controlsRef.current) {
+        cameraRef.current.position.lerp(DEFAULT_CAM_POS, 0.08);
+        controlsRef.current.target.lerp(DEFAULT_CAM_TARGET, 0.08);
+        if (cameraRef.current.position.distanceTo(DEFAULT_CAM_POS) < 0.12) {
+          cameraRef.current.position.copy(DEFAULT_CAM_POS);
+          controlsRef.current.target.copy(DEFAULT_CAM_TARGET);
+          isResettingRef.current = false;
+        }
+      }
+
       controls.update();
 
       const camPos = camera.position;
@@ -1385,12 +1485,11 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
 
   // View reset helper
   const resetCamera = () => {
-    if (!cameraRef.current || !controlsRef.current) return;
-    cameraRef.current.position.set(0, 38, 48);
-    controlsRef.current.target.set(0, 0, 0);
+    isResettingRef.current = true;
   };
 
   const setTopDownView = () => {
+    isResettingRef.current = false;
     if (!cameraRef.current || !controlsRef.current) return;
     cameraRef.current.position.set(0, 70, 0.1);
     controlsRef.current.target.set(0, 0, 0);
@@ -1402,164 +1501,384 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
       {/* 3D Canvas Mount */}
       <div ref={mountRef} className="w-full h-full flex-1 cursor-grab active:cursor-grabbing relative" />
 
-      {/* Top Left: Map Metric Selectors */}
-      <div className="absolute top-3 left-4 z-20 flex flex-wrap items-center gap-1.5 bg-[#0b172a]/90 backdrop-blur-md p-1.5 rounded border border-cyan-500/50 shadow-[0_0_20px_rgba(0,242,254,0.18)]">
-        {[
-          { id: 'export' as MapMetricType, label: 'İHRACAT' },
-          { id: 'osb' as MapMetricType, label: 'OSB SAYISI' },
-          { id: 'women' as MapMetricType, label: 'KADIN PAYI %' },
-          { id: 'population' as MapMetricType, label: 'NÜFUS' },
-          { id: 'gdp' as MapMetricType, label: 'GSYH/KİŞİ' }
-        ].map((btn) => (
-          <button
-            key={btn.id}
-            onClick={() => onMetricChange && onMetricChange(btn.id)}
-            className={`px-2.5 py-1 text-xs font-['Rajdhani'] font-bold tracking-wider transition-all rounded-xs ${
-              activeMetric === btn.id
-                ? 'bg-cyan-500 text-slate-950 font-bold shadow-[0_0_12px_#00f2fe]'
-                : 'text-cyan-300 hover:text-white hover:bg-cyan-950/60'
-            }`}
-          >
-            {btn.label}
-          </button>
-        ))}
-      </div>
+      {/* Top Left: Domain Categories with Dropdown Indicators */}
+      <div 
+        ref={categoryNavRef}
+        className="absolute top-3 left-4 z-20 flex flex-wrap items-center gap-1.5 bg-[#0b172a]/95 backdrop-blur-md p-1.5 rounded border border-cyan-500/50 shadow-[0_0_20px_rgba(0,242,254,0.18)]"
+      >
+        {CANVAS_THEMES.map((cat) => {
+          const isCatActive = 
+            currentMode === cat.id || 
+            (cat.id === 'trade' && activeMetric === 'export') ||
+            (cat.id === 'osb' && ['osb', 'osb_area', 'osb_parsel', 'osb_active'].includes(activeMetric)) ||
+            (cat.id === 'women' && activeMetric === 'women') ||
+            (cat.id === 'demography' && ['gdp', 'ses', 'population', 'unemployment', 'education', 'hospital_beds'].includes(activeMetric));
+          
+          const isOpen = openCategory === cat.id;
 
-      {/* Top Right: Camera, Extrude Pedestal Settings & PNG Export */}
-      <div className="absolute top-3 right-4 z-20 flex items-center gap-1.5 bg-[#0b172a]/90 backdrop-blur-md p-1.5 rounded border border-cyan-500/50 text-cyan-300 shadow-lg">
-        {/* PNG Export */}
-        <button
-          onClick={exportMapPNG}
-          className="flex items-center gap-1 px-2 py-1 text-xs font-['Rajdhani'] font-bold rounded transition-colors hover:bg-cyan-500/20 text-cyan-300 hover:text-white"
-          title="Google Earth 3D Harita Görüntüsünü PNG Olarak İndir"
-        >
-          <Camera className="w-3.5 h-3.5 text-cyan-400" />
-          <span className="hidden sm:inline">PNG İNDİR</span>
-        </button>
+          return (
+            <div key={cat.id} className="relative">
+              <button
+                onClick={() => {
+                  setIsCatalogOpen(false);
+                  setOpenCategory(isOpen ? null : cat.id);
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-['Rajdhani'] font-bold tracking-wider transition-all rounded-xs border ${
+                  isOpen
+                    ? 'bg-cyan-500 text-slate-950 border-cyan-300 shadow-[0_0_12px_#00f2fe]'
+                    : isCatActive
+                    ? 'bg-cyan-950/90 text-cyan-200 border-cyan-400 shadow-[0_0_10px_rgba(0,242,254,0.35)]'
+                    : 'text-slate-300 hover:text-white bg-[#061122]/70 border-cyan-500/20 hover:border-cyan-500/50'
+                }`}
+                title={`${cat.label} göstergelerini listele ve haritada göster`}
+              >
+                {cat.icon}
+                <span>{cat.label}</span>
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isOpen ? 'rotate-180 text-slate-950' : 'text-cyan-400'}`} />
+                {isCatActive && !isOpen && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_#00f2fe] animate-pulse" />
+                )}
+              </button>
 
-        {/* 3D Extrude Size & Light-Color Pedestal Settings */}
+              {/* Dropdown Menu for this category */}
+              {isOpen && (
+                <div className="absolute top-full left-0 mt-2 z-50 w-72 sm:w-80 p-2 bg-[#071328]/98 backdrop-blur-2xl border border-cyan-400/70 shadow-[0_12px_40px_rgba(0,0,0,0.85)] rounded-xs flex flex-col gap-1 select-none text-white animate-in fade-in zoom-in-95 duration-150">
+                  <div className="px-2 py-1 border-b border-cyan-500/30 flex items-center justify-between text-[11px] font-['Orbitron'] font-bold text-cyan-300">
+                    <span className="flex items-center gap-1.5 uppercase">
+                      {cat.icon}
+                      {cat.label} GÖSTERGELERİ
+                    </span>
+                    <span className="font-mono text-[9px] bg-cyan-950 px-1.5 py-0.2 rounded border border-cyan-500/30">
+                      {cat.items.length} GÖSTERGE
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col gap-1 pt-1 max-h-[300px] overflow-y-auto custom-scrollbar">
+                    {cat.items.map((item) => {
+                      const isItemActive = activeMetric === item.id;
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => {
+                            if (onMetricChange) onMetricChange(item.id);
+                            if (onModeChange) onModeChange(cat.id);
+                            setOpenCategory(null);
+                          }}
+                          className={`flex items-start justify-between gap-2 p-2 rounded-xs text-left transition-all ${
+                            isItemActive
+                              ? 'bg-cyan-500/25 border border-cyan-400 text-white shadow-[0_0_12px_rgba(0,242,254,0.25)]'
+                              : 'bg-[#0a1c38]/40 border border-transparent hover:bg-cyan-950/70 hover:border-cyan-500/40 text-slate-300 hover:text-white'
+                          }`}
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-['Rajdhani'] font-bold text-xs text-slate-100">
+                                {item.label}
+                              </span>
+                              <span className="font-mono text-[9px] px-1 py-0.2 bg-cyan-950 text-cyan-300 rounded border border-cyan-500/30 shrink-0">
+                                {item.unit}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-[10px] text-cyan-400/80 font-mono">
+                                {item.source}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-['Rajdhani'] truncate">
+                                · {item.desc}
+                              </span>
+                            </div>
+                          </div>
+
+                          {isItemActive && (
+                            <Check className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        <div className="h-4 w-[1px] bg-cyan-500/30 mx-1 hidden sm:block" />
+
+        {/* Global Catalog Dropdown Button */}
         <div className="relative">
           <button
-            onClick={() => setIsExtrudeOpen(!isExtrudeOpen)}
-            className={`flex items-center gap-1 px-2 py-1 text-xs font-['Rajdhani'] font-bold rounded transition-colors ${
-              isExtrudeOpen
-                ? 'bg-cyan-500 text-slate-950 shadow-[0_0_10px_#00f2fe]'
-                : 'text-cyan-300 hover:text-white hover:bg-cyan-500/20'
+            onClick={() => {
+              setOpenCategory(null);
+              setIsCatalogOpen(!isCatalogOpen);
+            }}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-['Rajdhani'] font-bold tracking-wider transition-all rounded-xs border ${
+              isCatalogOpen
+                ? 'bg-cyan-500 text-slate-950 border-cyan-300 shadow-[0_0_12px_#00f2fe]'
+                : !['export', 'osb', 'women', 'population', 'gdp'].includes(activeMetric)
+                ? 'bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 border-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.5)] font-bold'
+                : 'bg-cyan-950/60 text-cyan-300 border-cyan-500/40 hover:text-white hover:bg-cyan-500/20'
             }`}
-            title="3D Harita Dış Sınır Kabartma Derinliği ve Açık Kaide Rengi"
+            title="Tüm Ulusal Göstergeler Kataloğu & Arama"
           >
-            <Layers className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">KABARTMA: {extrudeDepth.toFixed(1)}x</span>
+            <Database className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">
+              {!['export', 'osb', 'women', 'population', 'gdp'].includes(activeMetric)
+                ? `KATALOG: ${getCategoryLabel(activeMetric).toUpperCase()}`
+                : 'TÜM KATALOG'}
+            </span>
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isCatalogOpen ? 'rotate-180' : ''}`} />
           </button>
 
-          {/* Slider Popover with Light-Color Extrude Options */}
-          {isExtrudeOpen && (
-            <div 
-              ref={extrudePopoverRef}
-              className="absolute top-full right-0 mt-2 z-50 w-72 p-3 bg-[#071328]/95 backdrop-blur-xl border border-cyan-400/50 shadow-[0_8px_32px_rgba(0,0,0,0.5)] rounded-xs flex flex-col gap-2.5 select-none text-white"
+          {/* Catalog Popover */}
+          {isCatalogOpen && (
+            <div
+              ref={catalogPopoverRef}
+              className="absolute top-full left-0 mt-2 z-50 w-80 sm:w-96 max-h-[460px] overflow-hidden bg-[#071328]/98 backdrop-blur-2xl border border-cyan-400/60 shadow-[0_12px_40px_rgba(0,0,0,0.85)] rounded-xs flex flex-col select-none text-white animate-in fade-in zoom-in-95 duration-150"
             >
-              <div className="flex items-center justify-between text-xs font-['Rajdhani'] font-bold">
-                <span className="flex items-center gap-1.5 uppercase tracking-wider text-cyan-300">
-                  <Sliders className="w-3.5 h-3.5 text-cyan-400" />
-                  3D Türkiye Dış Kaide
-                </span>
-                <span className="font-mono bg-cyan-950/80 text-cyan-300 px-2 py-0.5 border border-cyan-500/30 rounded-xs text-[11px] font-bold">
-                  {extrudeDepth.toFixed(1)}x
-                </span>
-              </div>
+              {/* Popover Header & Search */}
+              <div className="p-3 border-b border-cyan-500/30 bg-[#0b1c38]/90">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="flex items-center gap-1.5 text-xs font-['Rajdhani'] font-bold uppercase tracking-wider text-cyan-300">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    Ulusal Gösterge Kataloğu
+                  </span>
+                  <span className="font-mono text-[10px] text-cyan-300 bg-cyan-950/80 px-2 py-0.5 rounded-xs border border-cyan-500/40">
+                    15 GÖSTERGE
+                  </span>
+                </div>
 
-              <p className="text-[11px] font-['Rajdhani'] text-slate-300 -mt-1">
-                Türkiye&apos;nin en dış kıyı ve kara sınırlarının 3D derinlik boyutu:
-              </p>
-
-              {/* Minimalist Slider */}
-              <div className="py-1">
-                <input
-                  type="range"
-                  min="0.2"
-                  max="3.5"
-                  step="0.05"
-                  value={extrudeDepth}
-                  onChange={(e) => setExtrudeDepth(parseFloat(e.target.value))}
-                  className="w-full h-2 rounded-full appearance-none cursor-pointer focus:outline-none accent-cyan-500"
-                  style={{
-                    background: `linear-gradient(to right, #00f2fe 0%, #00f2fe ${((extrudeDepth - 0.2) / (3.5 - 0.2)) * 100}%, rgba(100, 116, 139, 0.4) ${((extrudeDepth - 0.2) / (3.5 - 0.2)) * 100}%, rgba(100, 116, 139, 0.4) 100%)`
-                  }}
-                />
-                <div className="flex justify-between items-center text-[10px] font-mono text-slate-400 mt-1">
-                  <span>0.2x (İnce Kaide)</span>
-                  <span>0.7x (Varsayılan)</span>
-                  <span>3.5x (Yüksek 3D Blok)</span>
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-cyan-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Göstergelerde ara (örn: işsizlik, SEGE, parsel...)"
+                    value={catalogSearch}
+                    onChange={(e) => setCatalogSearch(e.target.value)}
+                    className="w-full bg-[#051024] border border-cyan-500/40 rounded-xs pl-8 pr-3 py-1.5 text-xs font-['Rajdhani'] text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/50"
+                  />
                 </div>
               </div>
 
-              {/* Extrude Side Wall Light Color Options */}
-              <div className="pt-2 border-t border-cyan-500/20">
-                <span className="text-[11px] font-['Rajdhani'] font-bold text-slate-300 block mb-1.5">
-                  Kaide Açık Rengi:
-                </span>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {(Object.keys(EXTRUDE_WALL_COLORS) as ExtrudeWallColorType[]).map((clrKey) => (
-                    <button
-                      key={clrKey}
-                      onClick={() => setExtrudeWallColor(clrKey)}
-                      className={`flex items-center gap-1.5 px-2 py-1 text-[11px] font-['Rajdhani'] font-bold rounded-xs border transition-colors ${
-                        extrudeWallColor === clrKey
-                          ? 'bg-cyan-500/30 border-cyan-400 text-white'
-                          : 'bg-[#0f2444] border-cyan-500/20 text-slate-300 hover:text-white'
-                      }`}
-                    >
-                      <span 
-                        className="w-2.5 h-2.5 rounded-full border border-black/40 shadow-xs" 
-                        style={{ backgroundColor: '#' + EXTRUDE_WALL_COLORS[clrKey].hex.toString(16).padStart(6, '0') }} 
-                      />
-                      <span>{EXTRUDE_WALL_COLORS[clrKey].name.split('/')[0]}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
+              {/* Categorized Items List */}
+              <div className="flex-1 overflow-y-auto p-2 space-y-3 custom-scrollbar max-h-[340px]">
+                {filteredCatalog.map((cat, cIdx) => (
+                  <div key={cIdx} className="space-y-1">
+                    <div className="px-2 py-0.5 text-[10px] font-['Orbitron'] font-bold tracking-wider text-cyan-400/80 border-b border-cyan-500/20 uppercase flex items-center justify-between">
+                      <span>{cat.name}</span>
+                      <span className="text-[9px] font-mono opacity-60">{cat.items.length}</span>
+                    </div>
 
-              {/* Quick Presets */}
-              <div className="grid grid-cols-3 gap-1 pt-1.5 border-t border-cyan-500/20">
-                {[
-                  { label: 'Hafif 0.4x', val: 0.4 },
-                  { label: 'Varsayılan 0.7x', val: 0.7 },
-                  { label: 'Yüksek 2.0x', val: 2.0 }
-                ].map((preset) => (
-                  <button
-                    key={preset.val}
-                    onClick={() => setExtrudeDepth(preset.val)}
-                    className={`py-1 text-[11px] font-['Rajdhani'] font-bold rounded-xs transition-colors ${
-                      Math.abs(extrudeDepth - preset.val) < 0.1
-                        ? 'bg-cyan-500 text-slate-950 font-bold'
-                        : 'bg-[#0f2444] border border-cyan-500/20 text-cyan-300 hover:text-white'
-                    }`}
-                  >
-                    {preset.label}
-                  </button>
+                    <div className="grid grid-cols-1 gap-1 pt-1">
+                      {cat.items.map((item) => {
+                        const isSelected = activeMetric === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            onClick={() => {
+                              onMetricChange && onMetricChange(item.id);
+                              setIsCatalogOpen(false);
+                            }}
+                            className={`flex items-start justify-between gap-2 p-2 rounded-xs text-left transition-all ${
+                              isSelected
+                                ? 'bg-cyan-500/25 border border-cyan-400 text-white shadow-[0_0_12px_rgba(0,242,254,0.2)]'
+                                : 'bg-[#0a1c38]/50 border border-transparent hover:bg-cyan-950/70 hover:border-cyan-500/40 text-slate-300 hover:text-white'
+                            }`}
+                          >
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-['Rajdhani'] font-bold text-xs text-slate-100">
+                                  {item.label}
+                                </span>
+                                <span className="font-mono text-[9px] px-1 py-0.2 bg-cyan-950 text-cyan-300 rounded border border-cyan-500/30">
+                                  {item.unit}
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-slate-400 font-['Rajdhani'] leading-tight mt-0.5">
+                                {item.desc}
+                              </p>
+                            </div>
+
+                            {isSelected && (
+                              <Check className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 ))}
+
+                {filteredCatalog.length === 0 && (
+                  <div className="py-6 text-center text-xs font-['Rajdhani'] text-slate-400">
+                    Aranan kritere uygun gösterge bulunamadı.
+                  </div>
+                )}
               </div>
             </div>
           )}
         </div>
+      </div>
 
-        <button
-          onClick={resetCamera}
-          className="flex items-center gap-1 px-2 py-1 text-xs font-['Rajdhani'] font-bold rounded transition-colors hover:text-white hover:bg-cyan-500/20 text-cyan-300"
-          title="Kamera Açısını Sıfırla (Perspektif)"
-        >
-          <RotateCcw className="w-3.5 h-3.5 text-cyan-400" />
-          <span className="hidden sm:inline">SIFIRLA</span>
-        </button>
+      {/* Top Right: Camera, Extrude Pedestal Settings & PNG Export */}
+      <div className="absolute top-3 right-4 z-20 flex flex-col items-end gap-2">
+        <div className="flex items-center gap-1.5 bg-[#0b172a]/90 backdrop-blur-md p-1.5 rounded border border-cyan-500/50 text-cyan-300 shadow-lg">
+          {/* PNG Export */}
+          <button
+            onClick={exportMapPNG}
+            className="flex items-center gap-1 px-2 py-1 text-xs font-['Rajdhani'] font-bold rounded transition-colors hover:bg-cyan-500/20 text-cyan-300 hover:text-white"
+            title="Google Earth 3D Harita Görüntüsünü PNG Olarak İndir"
+          >
+            <Camera className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="hidden sm:inline">PNG İNDİR</span>
+          </button>
 
-        <button
-          onClick={setTopDownView}
-          className="flex items-center gap-1 px-2 py-1 text-xs font-['Rajdhani'] font-bold rounded transition-colors hover:text-white hover:bg-cyan-500/20 text-cyan-300"
-          title="Kuşbakışı (2D/3D Dik Açı) Görünüme Geç"
-        >
-          <Compass className="w-3.5 h-3.5 text-cyan-400" />
-          <span className="hidden sm:inline">DİK AÇI</span>
-        </button>
+          {/* 3D Extrude Size & Light-Color Pedestal Settings */}
+          <div className="relative">
+            <button
+              onClick={() => setIsExtrudeOpen(!isExtrudeOpen)}
+              className={`flex items-center gap-1 px-2 py-1 text-xs font-['Rajdhani'] font-bold rounded transition-colors ${
+                isExtrudeOpen
+                  ? 'bg-cyan-500 text-slate-950 shadow-[0_0_10px_#00f2fe]'
+                  : 'text-cyan-300 hover:text-white hover:bg-cyan-500/20'
+              }`}
+              title="3D Harita Dış Sınır Kabartma Derinliği ve Açık Kaide Rengi"
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">KABARTMA: {extrudeDepth.toFixed(1)}x</span>
+            </button>
+
+            {/* Slider Popover with Light-Color Extrude Options */}
+            {isExtrudeOpen && (
+              <div 
+                ref={extrudePopoverRef}
+                className="absolute top-full right-0 mt-2 z-50 w-72 p-3 bg-[#071328]/95 backdrop-blur-xl border border-cyan-400/50 shadow-[0_8px_32px_rgba(0,0,0,0.5)] rounded-xs flex flex-col gap-2.5 select-none text-white"
+              >
+                <div className="flex items-center justify-between text-xs font-['Rajdhani'] font-bold">
+                  <span className="flex items-center gap-1.5 uppercase tracking-wider text-cyan-300">
+                    <Sliders className="w-3.5 h-3.5 text-cyan-400" />
+                    3D Türkiye Dış Kaide
+                  </span>
+                  <span className="font-mono bg-cyan-950/80 text-cyan-300 px-2 py-0.5 border border-cyan-500/30 rounded-xs text-[11px] font-bold">
+                    {extrudeDepth.toFixed(1)}x
+                  </span>
+                </div>
+
+                <p className="text-[11px] font-['Rajdhani'] text-slate-300 -mt-1">
+                  Türkiye&apos;nin en dış kıyı ve kara sınırlarının 3D derinlik boyutu:
+                </p>
+
+                {/* Minimalist Slider */}
+                <div className="py-1">
+                  <input
+                    type="range"
+                    min="0.2"
+                    max="3.5"
+                    step="0.05"
+                    value={extrudeDepth}
+                    onChange={(e) => setExtrudeDepth(parseFloat(e.target.value))}
+                    className="w-full h-2 rounded-full appearance-none cursor-pointer focus:outline-none accent-cyan-500"
+                    style={{
+                      background: `linear-gradient(to right, #00f2fe 0%, #00f2fe ${((extrudeDepth - 0.2) / (3.5 - 0.2)) * 100}%, rgba(100, 116, 139, 0.4) ${((extrudeDepth - 0.2) / (3.5 - 0.2)) * 100}%, rgba(100, 116, 139, 0.4) 100%)`
+                    }}
+                  />
+                  <div className="flex justify-between items-center text-[10px] font-mono text-slate-400 mt-1">
+                    <span>0.2x (İnce Kaide)</span>
+                    <span>0.7x (Varsayılan)</span>
+                    <span>3.5x (Yüksek 3D Blok)</span>
+                  </div>
+                </div>
+
+                {/* Extrude Side Wall Light Color Options */}
+                <div className="pt-2 border-t border-cyan-500/20">
+                  <span className="text-[11px] font-['Rajdhani'] font-bold text-slate-300 block mb-1.5">
+                    Kaide Açık Rengi:
+                  </span>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {(Object.keys(EXTRUDE_WALL_COLORS) as ExtrudeWallColorType[]).map((clrKey) => (
+                      <button
+                        key={clrKey}
+                        onClick={() => setExtrudeWallColor(clrKey)}
+                        className={`flex items-center gap-1.5 px-2 py-1 text-[11px] font-['Rajdhani'] font-bold rounded-xs border transition-colors ${
+                          extrudeWallColor === clrKey
+                            ? 'bg-cyan-500/30 border-cyan-400 text-white'
+                            : 'bg-[#0f2444] border-cyan-500/20 text-slate-300 hover:text-white'
+                        }`}
+                      >
+                        <span 
+                          className="w-2.5 h-2.5 rounded-full border border-black/40 shadow-xs" 
+                          style={{ backgroundColor: '#' + EXTRUDE_WALL_COLORS[clrKey].hex.toString(16).padStart(6, '0') }} 
+                        />
+                        <span>{EXTRUDE_WALL_COLORS[clrKey].name.split('/')[0]}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Quick Presets */}
+                <div className="grid grid-cols-3 gap-1 pt-1.5 border-t border-cyan-500/20">
+                  {[
+                    { label: 'Hafif 0.4x', val: 0.4 },
+                    { label: 'Varsayılan 0.7x', val: 0.7 },
+                    { label: 'Yüksek 2.0x', val: 2.0 }
+                  ].map((preset) => (
+                    <button
+                      key={preset.val}
+                      onClick={() => setExtrudeDepth(preset.val)}
+                      className={`py-1 text-[11px] font-['Rajdhani'] font-bold rounded-xs transition-colors ${
+                        Math.abs(extrudeDepth - preset.val) < 0.1
+                          ? 'bg-cyan-500 text-slate-950 font-bold'
+                          : 'bg-[#0f2444] border border-cyan-500/20 text-cyan-300 hover:text-white'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <button
+            onClick={resetCamera}
+            className="flex items-center gap-1 px-2 py-1 text-xs font-['Rajdhani'] font-bold rounded transition-colors hover:text-white hover:bg-cyan-500/20 text-cyan-300"
+            title="Kamera Açısını Sıfırla (Perspektif)"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="hidden sm:inline">SIFIRLA</span>
+          </button>
+
+          <button
+            onClick={setTopDownView}
+            className="flex items-center gap-1 px-2 py-1 text-xs font-['Rajdhani'] font-bold rounded transition-colors hover:text-white hover:bg-cyan-500/20 text-cyan-300"
+            title="Kuşbakışı (2D/3D Dik Açı) Görünüme Geç"
+          >
+            <Compass className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="hidden sm:inline">DİK AÇI</span>
+          </button>
+        </div>
+
+        {/* Live Kiosk Transition & Countdown Pill under right menu */}
+        {isAutoPlay && (
+          <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-xs bg-[#05132d]/95 backdrop-blur-xl border border-cyan-400/50 shadow-[0_6px_24px_rgba(0,0,0,0.65)] select-none animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
+              </span>
+              <span className="font-['Rajdhani'] font-bold text-xs tracking-wider text-white uppercase drop-shadow-[0_0_8px_rgba(0,242,254,0.4)] whitespace-nowrap">
+                {autoPlayStepTitle || 'CANLI SUNUM'}
+              </span>
+            </div>
+            
+            {/* Progress Bar (cyan to amber gradient) */}
+            <div className="w-20 sm:w-24 h-2 bg-[#020712] rounded-full overflow-hidden border border-cyan-500/40 p-[1px] shadow-inner shrink-0">
+              <div 
+                className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-sky-300 to-amber-400 transition-all duration-100 ease-linear shadow-[0_0_8px_rgba(0,242,254,0.6)]"
+                style={{ width: `${Math.min(100, Math.max(0, autoPlayProgress || 0))}%` }}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Floating Hover Info Card */}

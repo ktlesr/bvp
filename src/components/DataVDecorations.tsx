@@ -80,6 +80,15 @@ export const DigitalCounter: React.FC<{
 }> = ({ label, value, unit, subValue, isPositive, prefix }) => {
   const formatted = typeof value === 'number' ? value.toLocaleString('tr-TR') : value;
 
+  // Prevent duplicate unit displays (e.g. prefix "%" and unit "%", or prefix "$" and unit "USD" / "$")
+  let cleanUnit = unit;
+  if (prefix === '%' && (unit === '%' || unit === 'Yüzde')) {
+    cleanUnit = undefined;
+  }
+  if ((prefix === '$' || prefix === 'USD') && (unit === 'USD' || unit === '$')) {
+    cleanUnit = undefined;
+  }
+
   return (
     <div className="bg-[#05142e]/60 border border-cyan-500/20 px-3 py-2 rounded-xs relative overflow-hidden group hover:border-cyan-400/40 transition-colors">
       <div className="text-[11px] font-mono uppercase tracking-wider text-cyan-200/70 truncate flex items-center justify-between">
@@ -95,7 +104,7 @@ export const DigitalCounter: React.FC<{
         <span className="text-lg md:text-xl font-bold tracking-tight text-white drop-shadow-[0_0_12px_rgba(0,242,254,0.3)]">
           {formatted}
         </span>
-        {unit && <span className="text-xs text-cyan-300/80 font-['Rajdhani'] font-semibold">{unit}</span>}
+        {cleanUnit && <span className="text-xs text-cyan-300/80 font-['Rajdhani'] font-semibold">{cleanUnit}</span>}
       </div>
       <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-cyan-400/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
     </div>

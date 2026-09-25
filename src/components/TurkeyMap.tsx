@@ -1,21 +1,30 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { geoMercator, geoPath } from 'd3-geo';
-import { ZoomIn, ZoomOut, RotateCcw, MapPin, Sparkles } from 'lucide-react';
+import { ZoomIn, ZoomOut, RotateCcw, MapPin, Sparkles, Database, ChevronDown, Search, Check } from 'lucide-react';
 import { PROVINCE_CODES, REGIONS } from '../data/regions';
-import { getProvinceExport } from '../data/tradeData';
-import { getProvinceOSB } from '../data/osbData';
-import { getWomenShare } from '../data/womenTradeData';
-import { getProvinceOverview } from '../data/demographyData';
 import defaultGeoData from '../data/nuts3.geo.json';
+import { 
+  MapMetricType, 
+  computeProvinceMetric, 
+  formatMetricDisplay, 
+  getCategoryLabel, 
+  METRIC_CATALOG 
+} from '../data/metricCatalog';
+import { DashboardMode } from './Header';
 
-export type MapMetricType = 'export' | 'osb' | 'women' | 'population' | 'gdp';
+export type { MapMetricType };
 
 interface TurkeyMapProps {
   selectedProvinceCode: string;
   onSelectProvince: (code: string) => void;
   activeMetric: MapMetricType;
   onMetricChange?: (metric: MapMetricType) => void;
+  currentMode?: DashboardMode;
+  onModeChange?: (mode: DashboardMode) => void;
   metricYear?: number;
+  isAutoPlay?: boolean;
+  autoPlayProgress?: number;
+  autoPlayStepTitle?: string;
 }
 
 // Major economic hub coordinates for animated flight/flow pulses
@@ -54,6 +63,38 @@ export const TurkeyMap: React.FC<TurkeyMapProps> = ({
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
+  // Catalog popover state
+  const [isCatalogOpen, setIsCatalogOpen] = useState<boolean>(false);
+  const [catalogSearch, setCatalogSearch] = useState<string>('');
+  const catalogPopoverRef = useRef<HTMLDivElement>(null);
+
+  const filteredCatalog = useMemo(() => {
+    if (!catalogSearch.trim()) return METRIC_CATALOG;
+    const q = catalogSearch.toLowerCase();
+    return METRIC_CATALOG.map((cat) => ({
+      ...cat,
+      items: cat.items.filter(
+        (it) =>
+          it.label.toLowerCase().includes(q) ||
+          it.desc.toLowerCase().includes(q) ||
+          it.shortLabel.toLowerCase().includes(q)
+      )
+    })).filter((cat) => cat.items.length > 0);
+  }, [catalogSearch]);
+
+  // Close catalog on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (catalogPopoverRef.current && !catalogPopoverRef.current.contains(e.target as Node)) {
+        setIsCatalogOpen(false);
+      }
+    };
+    if (isCatalogOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isCatalogOpen]);
+
   // Load geojson on mount
   useEffect(() => {
     fetch('/nuts3.geo.json')
@@ -64,20 +105,7 @@ export const TurkeyMap: React.FC<TurkeyMapProps> = ({
 
   // Compute metric value for a given province code
   const getMetricValue = (code: string): number => {
-    switch (activeMetric) {
-      case 'export':
-        return getProvinceExport(code, 3); // 2025
-      case 'osb':
-        return getProvinceOSB(code).count;
-      case 'women':
-        return getWomenShare(code, 7); // 2025
-      case 'population':
-        return getProvinceOverview(code).population;
-      case 'gdp':
-        return getProvinceOverview(code).gdpPerCapitaUsd;
-      default:
-        return getProvinceExport(code, 3);
-    }
+    return computeProvinceMetric(code, activeMetric);
   };
 
   // Find min and max for active metric across all 81 provinces
@@ -136,14 +164,7 @@ export const TurkeyMap: React.FC<TurkeyMapProps> = ({
   const handleMouseUp = () => setIsDragging(false);
 
   const formatMetricVal = (v: number) => {
-    if (activeMetric === 'women') return `%${v.toFixed(1)}`;
-    if (activeMetric === 'export') {
-      if (v >= 1e9) return `$${(v / 1e9).toFixed(2)} Milyar`;
-      if (v >= 1e6) return `$${(v / 1e6).toFixed(1)} Milyon`;
-      return `$${v.toLocaleString('tr-TR')}`;
-    }
-    if (activeMetric === 'gdp') return `$${v.toLocaleString('tr-TR')}`;
-    return v.toLocaleString('tr-TR');
+    return formatMetricDisplay(activeMetric, v);
   };
 
   return (
@@ -161,8 +182,8 @@ export const TurkeyMap: React.FC<TurkeyMapProps> = ({
         }}
       />
 
-      {/* Top Left: Map Metric Selectors */}
-      <div className="absolute top-3 left-4 z-20 flex flex-wrap items-center gap-1.5 bg-[#030919]/80 backdrop-blur-md p-1 rounded border border-cyan-500/30">
+      {/* Top Left: Map Metric Selectors & Catalog */}
+      <div className="absolute top-3 left-4 z-20 flex flex-wrap items-center gap-1.5 bg-[#030919]/85 backdrop-blur-md p-1 rounded border border-cyan-500/30">
         {[
           { id: 'export' as MapMetricType, label: 'İHRACAT' },
           { id: 'osb' as MapMetricType, label: 'OSB SAYISI' },
@@ -182,6 +203,80 @@ export const TurkeyMap: React.FC<TurkeyMapProps> = ({
             {btn.label}
           </button>
         ))}
+
+        <div className="h-3.5 w-[1px] bg-cyan-500/30 mx-0.5" />
+
+        {/* Catalog Button in 2D mode */}
+        <div className="relative">
+          <button
+            onClick={() => setIsCatalogOpen(!isCatalogOpen)}
+            className={`flex items-center gap-1 px-2 py-1 text-[11px] font-['Rajdhani'] font-bold tracking-wider transition-colors rounded-xs border ${
+              isCatalogOpen
+                ? 'bg-cyan-500 text-slate-950 border-cyan-300 shadow-[0_0_8px_#00f2fe]'
+                : !['export', 'osb', 'women', 'population', 'gdp'].includes(activeMetric)
+                ? 'bg-amber-500 text-slate-950 border-amber-300 font-bold'
+                : 'bg-cyan-950/40 text-cyan-300 border-cyan-500/30 hover:text-white'
+            }`}
+          >
+            <Database className="w-3 h-3" />
+            <span>
+              {!['export', 'osb', 'women', 'population', 'gdp'].includes(activeMetric)
+                ? `KATALOG: ${getCategoryLabel(activeMetric).toUpperCase()}`
+                : 'GÖSTERGE KATALOĞU'}
+            </span>
+            <ChevronDown className={`w-3 h-3 transition-transform ${isCatalogOpen ? 'rotate-180' : ''}`} />
+          </button>
+
+          {isCatalogOpen && (
+            <div
+              ref={catalogPopoverRef}
+              className="absolute top-full left-0 mt-2 z-50 w-80 max-h-[380px] overflow-hidden bg-[#071328]/98 backdrop-blur-2xl border border-cyan-400/60 shadow-[0_12px_40px_rgba(0,0,0,0.85)] rounded-xs flex flex-col select-none text-white animate-in fade-in zoom-in-95 duration-150"
+            >
+              <div className="p-2.5 border-b border-cyan-500/30 bg-[#0b1c38]/90">
+                <div className="relative">
+                  <Search className="w-3 h-3 text-cyan-400 absolute left-2 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Göstergelerde ara..."
+                    value={catalogSearch}
+                    onChange={(e) => setCatalogSearch(e.target.value)}
+                    className="w-full bg-[#051024] border border-cyan-500/40 rounded-xs pl-7 pr-2 py-1 text-xs font-['Rajdhani'] text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-cyan-400"
+                  />
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-2 space-y-2.5 custom-scrollbar max-h-[300px]">
+                {filteredCatalog.map((cat, cIdx) => (
+                  <div key={cIdx} className="space-y-1">
+                    <div className="px-1 text-[9px] font-['Orbitron'] font-bold text-cyan-400/80 border-b border-cyan-500/20 uppercase">
+                      {cat.name}
+                    </div>
+                    {cat.items.map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={() => {
+                          onMetricChange && onMetricChange(item.id);
+                          setIsCatalogOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between p-1.5 rounded-xs text-left text-xs ${
+                          activeMetric === item.id
+                            ? 'bg-cyan-500/25 border border-cyan-400 text-white'
+                            : 'hover:bg-cyan-950/60 text-slate-300 hover:text-white'
+                        }`}
+                      >
+                        <div className="truncate">
+                          <span className="font-['Rajdhani'] font-bold text-slate-100 mr-1.5">{item.label}</span>
+                          <span className="text-[9px] text-cyan-400/70 font-mono">({item.unit})</span>
+                        </div>
+                        {activeMetric === item.id && <Check className="w-3.5 h-3.5 text-cyan-400 shrink-0 ml-1" />}
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Top Right: Zoom and Pan Tools */}

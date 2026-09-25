@@ -9,9 +9,9 @@ import {
   TechDecorationLine 
 } from './components/DataVDecorations';
 import { 
-  TurkeyMap3D as TurkeyMap, 
-  MapMetricType 
+  TurkeyMap3D as TurkeyMap 
 } from './components/TurkeyMap3D';
+import { MapMetricType, getMetricTitle, computeProvinceMetric } from './data/metricCatalog';
 import { RankingList } from './components/RankingList';
 import { TrendChart } from './components/TrendChart';
 import { CompositionChart } from './components/CompositionChart';
@@ -38,16 +38,44 @@ import {
   BarChart3
 } from 'lucide-react';
 
+const KIOSK_STEPS: {
+  mode: DashboardMode;
+  metric: MapMetricType;
+  label: string;
+}[] = [
+  { mode: 'trade', metric: 'export', label: 'İHRACAT LİDERLERİ' },
+  { mode: 'osb', metric: 'osb', label: 'SANAYİ & OSB BÖLGELERİ' },
+  { mode: 'women', metric: 'women', label: 'KADIN GİRİŞİMCİ & İSTİHDAM' },
+  { mode: 'demography', metric: 'gdp', label: 'REFAH & KİŞİ BAŞI GSYH' }
+];
+
+function getTopLeaderCode(metric: MapMetricType): string {
+  let bestCode = '34';
+  let bestVal = -Infinity;
+  for (let i = 1; i <= 81; i++) {
+    const code = String(i);
+    const val = computeProvinceMetric(code, metric);
+    if (val > bestVal) {
+      bestVal = val;
+      bestCode = code;
+    }
+  }
+  return bestCode;
+}
+
 export default function App() {
   const [currentMode, setCurrentMode] = useState<DashboardMode>('trade');
   const [selectedProvinceCode, setSelectedProvinceCode] = useState<string>('34'); // Default Istanbul
   const [activeMetric, setActiveMetric] = useState<MapMetricType>('export');
   const [activeTheme, setActiveTheme] = useState<ThemeMode>('cyber-blue');
   const [isAutoPlay, setIsAutoPlay] = useState<boolean>(false);
+  const [kioskStepIdx, setKioskStepIdx] = useState<number>(0);
+  const [kioskProgress, setKioskProgress] = useState<number>(0);
   const [isDossierOpen, setIsDossierOpen] = useState<boolean>(false);
 
-  // Sync active map metric when dashboard mode changes
+  // Sync active map metric when dashboard mode changes manually (when not in auto play)
   useEffect(() => {
+    if (isAutoPlay) return;
     switch (currentMode) {
       case 'trade':
         setActiveMetric('export');
@@ -65,18 +93,47 @@ export default function App() {
         setIsDossierOpen(true);
         break;
     }
-  }, [currentMode]);
+  }, [currentMode, isAutoPlay]);
 
-  // Auto-play carousel mode switcher
+  // Cinematic Kiosk auto-play: Smooth 6-second countdown, theme cycling & leader city focus
   useEffect(() => {
-    if (!isAutoPlay) return;
-    const modes: DashboardMode[] = ['trade', 'osb', 'women', 'demography'];
+    if (!isAutoPlay) {
+      setKioskProgress(0);
+      return;
+    }
+
+    // Immediately focus on current step leader when starting
+    const currentStep = KIOSK_STEPS[kioskStepIdx];
+    if (currentStep) {
+      setCurrentMode(currentStep.mode);
+      setActiveMetric(currentStep.metric);
+      const leader = getTopLeaderCode(currentStep.metric);
+      setSelectedProvinceCode(leader);
+    }
+
+    const intervalMs = 100;
+    const durationMs = 6000; // 6 seconds per theme
+    const stepIncrement = (intervalMs / durationMs) * 100;
+
     const timer = setInterval(() => {
-      setCurrentMode((prev) => {
-        const nextIdx = (modes.indexOf(prev) + 1) % modes.length;
-        return modes[nextIdx];
+      setKioskProgress((prev) => {
+        if (prev + stepIncrement >= 100) {
+          // Advance to next theme
+          setKioskStepIdx((oldIdx) => {
+            const nextIdx = (oldIdx + 1) % KIOSK_STEPS.length;
+            const nextStep = KIOSK_STEPS[nextIdx];
+            setCurrentMode(nextStep.mode);
+            setActiveMetric(nextStep.metric);
+            const leader = getTopLeaderCode(nextStep.metric);
+            setSelectedProvinceCode(leader);
+            return nextIdx;
+          });
+          return 0;
+        }
+        return prev + stepIncrement;
       });
-    }, 12000);
+    }, intervalMs);
+
     return () => clearInterval(timer);
   }, [isAutoPlay]);
 
@@ -88,16 +145,6 @@ export default function App() {
   const currentOsb = getProvinceOSB(selectedProvinceCode);
   const currentWomenShare = getWomenShare(selectedProvinceCode, 7);
   const currentOverview = getProvinceOverview(selectedProvinceCode);
-
-  const getMetricTitle = (metric: MapMetricType): string => {
-    switch (metric) {
-      case 'export': return 'İHRACAT LİDERLERİ';
-      case 'osb': return 'OSB LİDERLERİ';
-      case 'women': return 'KADIN PAYI LİDERLERİ';
-      case 'population': return 'NÜFUS LİDERLERİ';
-      case 'gdp': return 'GSYH LİDERLERİ';
-    }
-  };
 
   return (
     <div className="min-h-screen bg-[#030816] text-slate-100 flex flex-col datav-grid-bg relative overflow-x-hidden selection:bg-cyan-500/30">
@@ -119,6 +166,8 @@ export default function App() {
         onThemeChange={setActiveTheme}
         isAutoPlay={isAutoPlay}
         onToggleAutoPlay={() => setIsAutoPlay(!isAutoPlay)}
+        autoPlayProgress={kioskProgress}
+        autoPlayStepTitle={KIOSK_STEPS[kioskStepIdx]?.label}
         onOpenProvinceSearch={() => setIsDossierOpen(true)}
         selectedProvinceName={selectedName}
       />
@@ -128,7 +177,6 @@ export default function App() {
         <DigitalCounter
           label="2025 Toplam Genel İhracat"
           value={255420000000}
-          unit="USD"
           prefix="$"
           subValue="+3.8% Yıllık"
           isPositive={true}
@@ -143,7 +191,6 @@ export default function App() {
         <DigitalCounter
           label="Kadınların İhracata Katkısı"
           value={14.2}
-          unit="%"
           prefix="%"
           subValue="18.9 Milyar $"
           isPositive={true}
@@ -158,7 +205,6 @@ export default function App() {
         <DigitalCounter
           label="Kişi Başı Ortalama GSYH"
           value={13110}
-          unit="USD"
           prefix="$"
           subValue="Ulusal Hesap"
           isPositive={true}
@@ -204,6 +250,11 @@ export default function App() {
               onSelectProvince={(code) => setSelectedProvinceCode(code)}
               activeMetric={activeMetric}
               onMetricChange={setActiveMetric}
+              currentMode={currentMode}
+              onModeChange={setCurrentMode}
+              isAutoPlay={isAutoPlay}
+              autoPlayProgress={kioskProgress}
+              autoPlayStepTitle={KIOSK_STEPS[kioskStepIdx]?.label}
             />
           </div>
 

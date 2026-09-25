@@ -1,10 +1,6 @@
 import React from 'react';
 import { PROVINCE_CODES } from '../data/regions';
-import { MapMetricType } from './TurkeyMap';
-import { getProvinceExport } from '../data/tradeData';
-import { getProvinceOSB } from '../data/osbData';
-import { getWomenShare } from '../data/womenTradeData';
-import { getProvinceOverview } from '../data/demographyData';
+import { MapMetricType, computeProvinceMetric, formatMetricDisplay } from '../data/metricCatalog';
 
 interface RankingListProps {
   activeMetric: MapMetricType;
@@ -22,12 +18,7 @@ export const RankingList: React.FC<RankingListProps> = ({
     const list: { code: string; name: string; value: number }[] = [];
     for (let i = 1; i <= 81; i++) {
       const code = String(i);
-      let value = 0;
-      if (activeMetric === 'export') value = getProvinceExport(code, 3);
-      else if (activeMetric === 'osb') value = getProvinceOSB(code).count;
-      else if (activeMetric === 'women') value = getWomenShare(code, 7);
-      else if (activeMetric === 'population') value = getProvinceOverview(code).population;
-      else if (activeMetric === 'gdp') value = getProvinceOverview(code).gdpPerCapitaUsd;
+      const value = computeProvinceMetric(code, activeMetric);
 
       list.push({
         code,
@@ -44,14 +35,7 @@ export const RankingList: React.FC<RankingListProps> = ({
   const maxVal = top10[0]?.value || 1;
 
   const formatValue = (v: number) => {
-    if (activeMetric === 'women') return `%${v.toFixed(1)}`;
-    if (activeMetric === 'export') {
-      if (v >= 1e9) return `$${(v / 1e9).toFixed(2)}B`;
-      if (v >= 1e6) return `$${(v / 1e6).toFixed(1)}M`;
-      return `$${v.toLocaleString('tr-TR')}`;
-    }
-    if (activeMetric === 'gdp') return `$${v.toLocaleString('tr-TR')}`;
-    return v.toLocaleString('tr-TR');
+    return formatMetricDisplay(activeMetric, v);
   };
 
   return (
