@@ -8,6 +8,7 @@ import {
   Sliders,
   Layers,
   ChevronDown,
+  ChevronUp,
   Search,
   Database,
   Check,
@@ -15,7 +16,15 @@ import {
   Globe,
   Factory,
   Users,
-  PieChart
+  PieChart,
+  Crosshair,
+  Award,
+  Eye,
+  Mouse,
+  Move,
+  HelpCircle,
+  X,
+  Hand
 } from 'lucide-react';
 import defaultGeoData from '../data/nuts3.geo.json';
 import { PROVINCE_CODES, REGIONS } from '../data/regions';
@@ -26,6 +35,7 @@ import {
   getCategoryLabel, 
   formatMetricDisplay 
 } from '../data/metricCatalog';
+import { getProvinceOverview } from '../data/demographyData';
 import { DashboardMode } from './Header';
 import { ThemeMode } from '../utils/theme';
 
@@ -125,17 +135,53 @@ if (defaultGeoData && (defaultGeoData as any).features) {
   });
 }
 
-// Generate Compact, High-Density 3D Billboard Tag (480x148 Hi-Res Canvas)
+export type MapBillboardStyle = 'classic' | 'capsule' | 'terminal';
+
+export interface BillboardStyleOption {
+  id: MapBillboardStyle;
+  label: string;
+  badge: string;
+  desc: string;
+  preview: string;
+}
+
+export const BILLBOARD_STYLE_OPTIONS: BillboardStyleOption[] = [
+  {
+    id: 'classic',
+    label: 'Klasik Siber HUD',
+    badge: 'KORUNAN STANDART',
+    desc: 'Orijinal DataV kartı, ince silindir ışık demeti ve sade neon zemin halkası',
+    preview: 'Klasik siber sütun & zemin halkası'
+  },
+  {
+    id: 'capsule',
+    label: 'Holo-Kapsül Cam',
+    badge: 'AEROSPACE LEVİTASYON',
+    desc: 'Manyetik kristal kılıflı sütun, ikili yörünge halkaları ve holo-yayıcı soket',
+    preview: 'Kristal manyetik sütun & çift yörünge'
+  },
+  {
+    id: 'terminal',
+    label: 'Taktik Komuta Terminali',
+    badge: 'EXECUTIVE TACTICAL',
+    desc: '6 köşeli stealth prizma pilon, çift lazer kılavuz rayı ve altıgen taktik hedefleme pedi',
+    preview: 'Altıgen hedefleme pedi & prizma pilon'
+  }
+];
+
+// Generate High-Density 3D Billboard Tag (512x160 Hi-Res Canvas) with 3 Selectable Styles
 function createCyberBillboardTexture(
   rank: number,
   name: string,
   metricText: string,
   categoryLabel: string,
-  colorScheme: 'gold' | 'cyan' | 'emerald' | 'blue'
+  colorScheme: 'gold' | 'cyan' | 'emerald' | 'blue',
+  style: MapBillboardStyle = 'classic',
+  extra?: { code?: string; val?: number }
 ): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
-  canvas.width = 480;
-  canvas.height = 148;
+  canvas.width = 512;
+  canvas.height = 160;
   const ctx = canvas.getContext('2d');
   if (!ctx) return new THREE.CanvasTexture(canvas);
 
@@ -176,104 +222,386 @@ function createCyberBillboardTexture(
 
   const w = canvas.width;
   const h = canvas.height;
-  const pad = 8;
+  const pad = 10;
+  const innerW = w - pad * 2;
+  const innerH = h - pad * 2;
 
-  // 1. Shadowed Card Background
-  ctx.save();
-  ctx.shadowColor = theme.glow;
-  ctx.shadowBlur = 16;
-  ctx.fillStyle = theme.bg;
-  ctx.beginPath();
-  ctx.roundRect(pad, pad, w - pad * 2, h - pad * 2, 8);
-  ctx.fill();
-  ctx.restore();
+  if (style === 'capsule') {
+    // =========================================================================
+    // STYLE 2: HOLO-KAPSÜL CAM (Aerospace Glassmorphism)
+    // =========================================================================
+    const radius = 30;
 
-  // 2. High-Tech Dual Border
-  ctx.strokeStyle = theme.border;
-  ctx.lineWidth = 2.5;
-  ctx.beginPath();
-  ctx.roundRect(pad, pad, w - pad * 2, h - pad * 2, 8);
-  ctx.stroke();
+    // 1. Frosted Glass Capsule Background
+    ctx.save();
+    ctx.shadowColor = theme.glow;
+    ctx.shadowBlur = 18;
+    const bgGrad = ctx.createLinearGradient(pad, pad, pad + innerW, pad + innerH);
+    bgGrad.addColorStop(0, 'rgba(8, 26, 56, 0.95)');
+    bgGrad.addColorStop(0.5, 'rgba(4, 15, 36, 0.97)');
+    bgGrad.addColorStop(1, 'rgba(2, 8, 20, 0.99)');
+    ctx.fillStyle = bgGrad;
+    ctx.beginPath();
+    ctx.roundRect(pad, pad, innerW, innerH, radius);
+    ctx.fill();
+    ctx.restore();
 
-  // 3. Cyber HUD Corner Brackets
-  const brk = 12;
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 2.5;
-  ctx.beginPath();
-  ctx.moveTo(pad - 1, pad + brk);
-  ctx.lineTo(pad - 1, pad - 1);
-  ctx.lineTo(pad + brk, pad - 1);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(w - pad + 1 - brk, pad - 1);
-  ctx.lineTo(w - pad + 1, pad - 1);
-  ctx.lineTo(w - pad + 1, pad + brk);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(pad - 1, h - pad - brk);
-  ctx.lineTo(pad - 1, h - pad + 1);
-  ctx.lineTo(pad + brk, h - pad + 1);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(w - pad + 1 - brk, h - pad + 1);
-  ctx.lineTo(w - pad + 1, h - pad + 1);
-  ctx.lineTo(w - pad + 1, h - pad - brk);
-  ctx.stroke();
+    // 2. Glossy Glass Specular Sheen (top half curved reflection)
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(pad, pad, innerW, innerH / 2, [radius, radius, 0, 0]);
+    const sheen = ctx.createLinearGradient(pad, pad, pad, pad + innerH / 2);
+    sheen.addColorStop(0, 'rgba(255, 255, 255, 0.22)');
+    sheen.addColorStop(1, 'rgba(255, 255, 255, 0.01)');
+    ctx.fillStyle = sheen;
+    ctx.fill();
+    ctx.restore();
 
-  // 4. Header Bar
-  const rankStr = rank < 10 ? `#0${rank}` : `#${rank}`;
-  const badgeW = 62;
-  const badgeH = 30;
-  const badgeX = pad + 14;
-  const badgeY = pad + 12;
+    // 3. Neon Halo Perimeter Ring
+    ctx.strokeStyle = theme.border;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.roundRect(pad, pad, innerW, innerH, radius);
+    ctx.stroke();
 
-  // Rank Pill
-  ctx.fillStyle = theme.badgeBg;
-  ctx.beginPath();
-  ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 4);
-  ctx.fill();
+    // 4. Circular Holographic Rank Medallion (left side)
+    const medX = pad + 52;
+    const medY = h / 2;
+    const medR = 36;
 
-  ctx.fillStyle = theme.badgeText;
-  ctx.font = 'bold 19px "Orbitron", monospace, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(rankStr, badgeX + badgeW / 2, badgeY + badgeH / 2);
+    // Outer orbital dashed track
+    ctx.strokeStyle = theme.border;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 3]);
+    ctx.beginPath();
+    ctx.arc(medX, medY, medR + 6, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
 
-  // City Name
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 24px "Rajdhani", sans-serif';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(name.toUpperCase(), badgeX + badgeW + 12, badgeY + badgeH / 2);
+    // Inner solid glowing circle
+    ctx.save();
+    ctx.shadowColor = theme.glow;
+    ctx.shadowBlur = 12;
+    const medGrad = ctx.createRadialGradient(medX, medY, 4, medX, medY, medR);
+    medGrad.addColorStop(0, theme.badgeBg);
+    medGrad.addColorStop(1, theme.primary);
+    ctx.fillStyle = medGrad;
+    ctx.beginPath();
+    ctx.arc(medX, medY, medR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
 
-  // Category Tag on right
-  ctx.fillStyle = theme.primary;
-  ctx.font = 'bold 14px "Rajdhani", sans-serif';
-  ctx.textAlign = 'right';
-  ctx.fillText(categoryLabel.toUpperCase(), w - pad - 14, badgeY + badgeH / 2);
+    // Rank text inside medallion
+    ctx.fillStyle = theme.badgeText;
+    ctx.font = 'bold 24px "Orbitron", monospace, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(rank < 10 ? `0${rank}` : `${rank}`, medX, medY - 4);
 
-  // 5. Tech Divider Line
-  const divY = badgeY + badgeH + 10;
-  const lineGrad = ctx.createLinearGradient(pad + 14, divY, w - pad - 14, divY);
-  lineGrad.addColorStop(0, 'rgba(255, 255, 255, 0.1)');
-  lineGrad.addColorStop(0.3, theme.border);
-  lineGrad.addColorStop(0.7, theme.border);
-  lineGrad.addColorStop(1, 'rgba(255, 255, 255, 0.1)');
-  ctx.strokeStyle = lineGrad;
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(pad + 14, divY);
-  ctx.lineTo(w - pad - 14, divY);
-  ctx.stroke();
+    // Sub-text under rank
+    ctx.font = 'bold 10px "Rajdhani", sans-serif';
+    ctx.fillText('TR SIRA', medX, medY + 15);
 
-  // 6. Centered, Balanced Value
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 33px "Orbitron", monospace, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.shadowColor = theme.glow;
-  ctx.shadowBlur = 12;
-  ctx.fillText(metricText, w / 2, divY + 38);
+    // 5. Province Header (right side)
+    const contentLeft = medX + medR + 20;
+    const contentRight = w - pad - 20;
+
+    // Green active dot
+    ctx.fillStyle = '#10b981';
+    ctx.beginPath();
+    ctx.arc(contentLeft, pad + 24, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Province Name
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 25px "Rajdhani", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(name.toUpperCase(), contentLeft + 14, pad + 24);
+
+    // Category Tag on right pill
+    const pillW = 128;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+    ctx.beginPath();
+    ctx.roundRect(contentRight - pillW, pad + 12, pillW, 26, 6);
+    ctx.fill();
+    ctx.fillStyle = theme.primary;
+    ctx.font = 'bold 12px "Rajdhani", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(categoryLabel.toUpperCase(), contentRight - pillW / 2, pad + 25);
+
+    // 6. Large Metric Value in Center
+    ctx.save();
+    ctx.shadowColor = theme.glow;
+    ctx.shadowBlur = 16;
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 36px "Orbitron", monospace, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(metricText, contentLeft, pad + 72);
+    ctx.restore();
+
+    // 7. Micro-Telemetry Scale Bar at Bottom
+    const barY = pad + 110;
+    const barW = contentRight - contentLeft - 95;
+    const barH = 8;
+    
+    // Track groove
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+    ctx.beginPath();
+    ctx.roundRect(contentLeft, barY, barW, barH, 4);
+    ctx.fill();
+
+    // Fill based on rank
+    const fillPct = Math.max(0.08, Math.min(1.0, (82 - rank) / 81));
+    const fillW = Math.max(10, barW * fillPct);
+    const fillGrad = ctx.createLinearGradient(contentLeft, barY, contentLeft + fillW, barY);
+    fillGrad.addColorStop(0, theme.primary);
+    fillGrad.addColorStop(1, '#ffffff');
+    ctx.fillStyle = fillGrad;
+    ctx.beginPath();
+    ctx.roundRect(contentLeft, barY, fillW, barH, 4);
+    ctx.fill();
+
+    // Scale label on right
+    ctx.fillStyle = 'rgba(226, 232, 240, 0.90)';
+    ctx.font = 'bold 12px "Rajdhani", sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(rank === 1 ? 'ULUSAL ZİRVE' : `LİDER %${Math.round(fillPct * 100)}`, contentRight, barY + 4);
+
+  } else if (style === 'terminal') {
+    // =========================================================================
+    // STYLE 3: TAKTİK KOMUTA TERMİNALİ (Stealth Chamfered Tactical HUD)
+    // =========================================================================
+    const chamfer = 18; // 45 degree cut corners
+    const makeChamferPath = () => {
+      ctx.beginPath();
+      ctx.moveTo(pad + chamfer, pad);
+      ctx.lineTo(pad + innerW - chamfer, pad);
+      ctx.lineTo(pad + innerW, pad + chamfer);
+      ctx.lineTo(pad + innerW, pad + innerH - chamfer);
+      ctx.lineTo(pad + innerW - chamfer, pad + innerH);
+      ctx.lineTo(pad + chamfer, pad + innerH);
+      ctx.lineTo(pad, pad + innerH - chamfer);
+      ctx.lineTo(pad, pad + chamfer);
+      ctx.closePath();
+    };
+
+    // Shadowed Background
+    ctx.save();
+    ctx.shadowColor = theme.glow;
+    ctx.shadowBlur = 18;
+    const bgGrad = ctx.createLinearGradient(pad, pad, pad, pad + innerH);
+    bgGrad.addColorStop(0, 'rgba(14, 20, 34, 0.98)');
+    bgGrad.addColorStop(1, 'rgba(4, 8, 16, 0.99)');
+    ctx.fillStyle = bgGrad;
+    makeChamferPath();
+    ctx.fill();
+    ctx.restore();
+
+    // Subtle Scanline Grid inside
+    ctx.fillStyle = 'rgba(0, 242, 254, 0.04)';
+    for (let y = pad + 4; y < pad + innerH; y += 8) {
+      ctx.fillRect(pad + 4, y, innerW - 8, 2);
+    }
+
+    // Thick Tactical Outer Perimeter
+    ctx.strokeStyle = theme.border;
+    ctx.lineWidth = 2.5;
+    makeChamferPath();
+    ctx.stroke();
+
+    // Top Status Bar
+    const barH = 34;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
+    ctx.beginPath();
+    ctx.moveTo(pad + chamfer, pad);
+    ctx.lineTo(pad + innerW - chamfer, pad);
+    ctx.lineTo(pad + innerW, pad + chamfer);
+    ctx.lineTo(pad + innerW, pad + barH);
+    ctx.lineTo(pad, pad + barH);
+    ctx.lineTo(pad, pad + chamfer);
+    ctx.closePath();
+    ctx.fill();
+
+    // Left Inverted Tag: TR-01
+    const tagW = 82;
+    ctx.fillStyle = theme.badgeBg;
+    ctx.beginPath();
+    ctx.moveTo(pad + chamfer, pad);
+    ctx.lineTo(pad + tagW, pad);
+    ctx.lineTo(pad + tagW - 12, pad + barH);
+    ctx.lineTo(pad, pad + barH);
+    ctx.lineTo(pad, pad + chamfer);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = theme.badgeText;
+    ctx.font = 'bold 16px "Orbitron", monospace, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(rank < 10 ? `TR-0${rank}` : `TR-${rank}`, pad + tagW / 2 - 4, pad + barH / 2);
+
+    // Live Pulse Dot & Telemetry Title
+    ctx.fillStyle = '#f59e0b';
+    ctx.beginPath();
+    ctx.arc(pad + tagW + 16, pad + barH / 2, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+    ctx.font = 'bold 13px "Rajdhani", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('LIVE TELEMETRY', pad + tagW + 28, pad + barH / 2);
+
+    // City Code on right
+    const cityCode = extra?.code ? `#${extra.code}` : '';
+    ctx.fillStyle = theme.primary;
+    ctx.font = 'bold 14px "Orbitron", monospace, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(`${name.toUpperCase()} ${cityCode}`, pad + innerW - 18, pad + barH / 2);
+
+    // Main Middle Body: Large Metric Value
+    ctx.save();
+    ctx.shadowColor = theme.glow;
+    ctx.shadowBlur = 15;
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 37px "Orbitron", monospace, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(metricText, pad + 20, pad + barH + 38);
+    ctx.restore();
+
+    // Bottom Status Bar
+    const footerY = pad + innerH - 26;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(pad + 18, footerY - 6);
+    ctx.lineTo(pad + innerW - 18, footerY - 6);
+    ctx.stroke();
+
+    // Chevrons and Category Name
+    ctx.fillStyle = theme.primary;
+    ctx.font = 'bold 13px "Orbitron", monospace, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('>>>', pad + 20, footerY + 6);
+
+    ctx.fillStyle = '#cbd5e1';
+    ctx.font = 'bold 13px "Rajdhani", sans-serif';
+    ctx.fillText(categoryLabel.toUpperCase(), pad + 60, footerY + 6);
+
+    // Status Badge on bottom right
+    ctx.fillStyle = theme.badgeBg;
+    ctx.font = 'bold 13px "Rajdhani", sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(rank === 1 ? '★ ULUSAL ZİRVE' : `81 İLDE #${rank}. SIRADA`, pad + innerW - 20, footerY + 6);
+
+  } else {
+    // =========================================================================
+    // STYLE 1: KLASİK SİBER HUD (KULLANICININ KORUNAN ORİJİNAL TASARIMI)
+    // =========================================================================
+    // 1. Shadowed Card Background
+    ctx.save();
+    ctx.shadowColor = theme.glow;
+    ctx.shadowBlur = 16;
+    ctx.fillStyle = theme.bg;
+    ctx.beginPath();
+    ctx.roundRect(pad, pad, innerW, innerH, 8);
+    ctx.fill();
+    ctx.restore();
+
+    // 2. High-Tech Dual Border
+    ctx.strokeStyle = theme.border;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.roundRect(pad, pad, innerW, innerH, 8);
+    ctx.stroke();
+
+    // 3. Cyber HUD Corner Brackets
+    const brk = 14;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(pad - 1, pad + brk);
+    ctx.lineTo(pad - 1, pad - 1);
+    ctx.lineTo(pad + brk, pad - 1);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(w - pad + 1 - brk, pad - 1);
+    ctx.lineTo(w - pad + 1, pad - 1);
+    ctx.lineTo(w - pad + 1, pad + brk);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(pad - 1, h - pad - brk);
+    ctx.lineTo(pad - 1, h - pad + 1);
+    ctx.lineTo(pad + brk, h - pad + 1);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(w - pad + 1 - brk, h - pad + 1);
+    ctx.lineTo(w - pad + 1, h - pad + 1);
+    ctx.lineTo(w - pad + 1, h - pad - brk);
+    ctx.stroke();
+
+    // 4. Header Bar
+    const rankStr = rank < 10 ? `#0${rank}` : `#${rank}`;
+    const badgeW = 66;
+    const badgeH = 32;
+    const badgeX = pad + 16;
+    const badgeY = pad + 14;
+
+    // Rank Pill
+    ctx.fillStyle = theme.badgeBg;
+    ctx.beginPath();
+    ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 4);
+    ctx.fill();
+
+    ctx.fillStyle = theme.badgeText;
+    ctx.font = 'bold 20px "Orbitron", monospace, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(rankStr, badgeX + badgeW / 2, badgeY + badgeH / 2);
+
+    // City Name
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 25px "Rajdhani", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(name.toUpperCase(), badgeX + badgeW + 14, badgeY + badgeH / 2);
+
+    // Category Tag on right
+    ctx.fillStyle = theme.primary;
+    ctx.font = 'bold 15px "Rajdhani", sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(categoryLabel.toUpperCase(), w - pad - 16, badgeY + badgeH / 2);
+
+    // 5. Tech Divider Line
+    const divY = badgeY + badgeH + 12;
+    const lineGrad = ctx.createLinearGradient(pad + 16, divY, w - pad - 16, divY);
+    lineGrad.addColorStop(0, 'rgba(255, 255, 255, 0.1)');
+    lineGrad.addColorStop(0.3, theme.border);
+    lineGrad.addColorStop(0.7, theme.border);
+    lineGrad.addColorStop(1, 'rgba(255, 255, 255, 0.1)');
+    ctx.strokeStyle = lineGrad;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(pad + 16, divY);
+    ctx.lineTo(w - pad - 16, divY);
+    ctx.stroke();
+
+    // 6. Centered, Balanced Value
+    ctx.save();
+    ctx.shadowColor = theme.glow;
+    ctx.shadowBlur = 14;
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 36px "Orbitron", monospace, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(metricText, w / 2, divY + 40);
+    ctx.restore();
+  }
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
@@ -401,6 +729,40 @@ const CANVAS_THEMES: {
   }
 ];
 
+export type DataPresentationMode = 'classic' | 'hololens' | 'cyber-prism';
+
+interface PresentationOption {
+  id: DataPresentationMode;
+  label: string;
+  badge: string;
+  desc: string;
+  icon: React.ComponentType<{ className?: string }>;
+}
+
+const PRESENTATION_OPTIONS: PresentationOption[] = [
+  {
+    id: 'classic',
+    label: 'Klasik DataV',
+    badge: 'VARSAYILAN',
+    desc: 'Standart kompakt HUD bilgi kartı ve il kodu göstergesi',
+    icon: Eye
+  },
+  {
+    id: 'hololens',
+    label: 'Holo-Lens Taktik',
+    badge: 'HEDEFLEME & KALİBRASYON',
+    desc: 'Nişangah braketleri, TR sıralama pini ve dinamik tepe payı ölçeği',
+    icon: Crosshair
+  },
+  {
+    id: 'cyber-prism',
+    label: 'Siber-Prizma İl Karnesi',
+    badge: 'ÇOK BOYUTLU KARNE',
+    desc: 'Liderlik derecesi, Nüfus, GSYH ve SEGE mini telemetri dökümü',
+    icon: Award
+  }
+];
+
 export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
   selectedProvinceCode,
   onSelectProvince,
@@ -415,6 +777,18 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   
+  // 3D Map Billboard Style State ('classic' | 'capsule' | 'terminal')
+  const [mapBillboardStyle, setMapBillboardStyle] = useState<MapBillboardStyle>('classic');
+  const [isPresentationOpen, setIsPresentationOpen] = useState<boolean>(false);
+  const presentationPopoverRef = useRef<HTMLDivElement>(null);
+  const mapBillboardStyleRef = useRef<MapBillboardStyle>(mapBillboardStyle);
+  mapBillboardStyleRef.current = mapBillboardStyle;
+  const applyBillboardStyleRef = useRef<((style: MapBillboardStyle) => void) | null>(null);
+
+  // 3D Mouse & Touch Navigation Controls Guide State
+  const [isControlsCollapsed, setIsControlsCollapsed] = useState<boolean>(false);
+  const [isDetailedGuideOpen, setIsDetailedGuideOpen] = useState<boolean>(false);
+
   // 3D Extrusion Depth
   const [extrudeDepth, setExtrudeDepth] = useState<number>(0.7);
   const [extrudeWallColor, setExtrudeWallColor] = useState<ExtrudeWallColorType>('marble');
@@ -443,6 +817,24 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
       )
     })).filter((cat) => cat.items.length > 0);
   }, [catalogSearch]);
+
+  // Pre-calculate national ranking for all 81 provinces for the active metric
+  const provinceRanks = useMemo(() => {
+    const list = Object.entries(PROVINCE_CODES).map(([code, name]) => ({
+      code,
+      name,
+      val: computeProvinceMetric(code, activeMetric)
+    }));
+    list.sort((a, b) => b.val - a.val);
+    const rankMap = new Map<string, { rank: number; total: number; topPct: number; maxVal: number }>();
+    const maxVal = list[0]?.val || 1;
+    list.forEach((item, idx) => {
+      const rank = idx + 1;
+      const topPct = Math.max(1, Math.round((rank / list.length) * 100));
+      rankMap.set(item.code, { rank, total: list.length, topPct, maxVal });
+    });
+    return rankMap;
+  }, [activeMetric]);
 
   const [hoveredInfo, setHoveredInfo] = useState<{
     code: string;
@@ -506,14 +898,27 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
       if (categoryNavRef.current && !categoryNavRef.current.contains(event.target as Node)) {
         setOpenCategory(null);
       }
+      if (presentationPopoverRef.current && !presentationPopoverRef.current.contains(event.target as Node)) {
+        setIsPresentationOpen(false);
+      }
     };
-    if (isExtrudeOpen || isCatalogOpen || openCategory !== null) {
+    if (isExtrudeOpen || isCatalogOpen || openCategory !== null || isPresentationOpen) {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [isExtrudeOpen, isCatalogOpen, openCategory]);
+  }, [isExtrudeOpen, isCatalogOpen, openCategory, isPresentationOpen]);
+
+  // Handler to synchronously re-render all 3D billboards across Turkey with newly selected design
+  const handleSelectBillboardStyle = (styleId: MapBillboardStyle) => {
+    setMapBillboardStyle(styleId);
+    mapBillboardStyleRef.current = styleId;
+    if (applyBillboardStyleRef.current) {
+      applyBillboardStyleRef.current(styleId);
+    }
+    setIsPresentationOpen(false);
+  };
 
   // Cinematic Orbit when AutoPlay is enabled & Smooth Camera Reset when Paused
   const isResettingRef = useRef<boolean>(false);
@@ -851,11 +1256,290 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
     dynamicArcsGroupRef.current = dynamicArcsGroup;
     scene.add(dynamicArcsGroup);
 
+    // Cleanly dispose Three.js geometry and materials
+    const disposeGroup = (grp: THREE.Group) => {
+      grp.traverse((obj) => {
+        if (obj instanceof THREE.Mesh || obj instanceof THREE.LineSegments) {
+          obj.geometry?.dispose();
+          if (Array.isArray(obj.material)) {
+            obj.material.forEach((m) => m.dispose());
+          } else {
+            obj.material?.dispose();
+          }
+        }
+      });
+    };
+
+    // Build style-specific 3D vertical pillar, ground base, and top socket
+    const createPillarComponents = (
+      style: MapBillboardStyle,
+      role: 'gold' | 'cyan' | 'blue' | 'emerald',
+      themePrimaryHex: number,
+      baseHeight: number = 7.8
+    ) => {
+      const pillarGroup = new THREE.Group();
+      const groundGroup = new THREE.Group();
+      const shaftGroup = new THREE.Group();
+      let topSocket: THREE.Object3D | null = null;
+
+      const mainColor = 
+        role === 'gold' ? 0xfbbf24 :
+        role === 'emerald' ? 0x10b981 :
+        role === 'cyan' ? themePrimaryHex :
+        0x38bdf8;
+
+      const accentColor = role === 'gold' ? 0xfffbeb : 0xffffff;
+
+      if (style === 'capsule') {
+        // =========================================================================
+        // STYLE 2: HOLO-KAPSÜL (Manyetik Kristal Pilon, İkili Yörünge & Emitter Başlığı)
+        // =========================================================================
+        // 1. Zemin: Çift Eşmerkezli Manyetik Levitasyon Halkaları
+        const innerRingGeo = new THREE.RingGeometry(0.45, 0.95, 32);
+        const innerRingMat = new THREE.MeshBasicMaterial({
+          color: mainColor,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.95
+        });
+        const innerRing = new THREE.Mesh(innerRingGeo, innerRingMat);
+        innerRing.rotation.x = -Math.PI / 2;
+        innerRing.position.y = 0.08;
+        groundGroup.add(innerRing);
+
+        const outerOrbitGeo = new THREE.RingGeometry(1.35, 1.6, 32);
+        const outerOrbitMat = new THREE.MeshBasicMaterial({
+          color: mainColor,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.50
+        });
+        const outerOrbit = new THREE.Mesh(outerOrbitGeo, outerOrbitMat);
+        outerOrbit.rotation.x = -Math.PI / 2;
+        outerOrbit.position.y = 0.07;
+        groundGroup.add(outerOrbit);
+
+        const basePedestal = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.5, 0.72, 0.16, 24),
+          new THREE.MeshStandardMaterial({
+            color: 0x05132d,
+            emissive: mainColor,
+            emissiveIntensity: 0.35,
+            roughness: 0.3,
+            metalness: 0.8
+          })
+        );
+        basePedestal.position.y = 0.08;
+        groundGroup.add(basePedestal);
+
+        const centerGlow = new THREE.Mesh(
+          new THREE.SphereGeometry(0.35, 16, 16),
+          new THREE.MeshBasicMaterial({ color: accentColor })
+        );
+        centerGlow.position.y = 0.18;
+        groundGroup.add(centerGlow);
+
+        // 2. Dikey Sütun: İç Parlak Çekirdek + Dış Yarı Saydam Kristal Kılıf
+        const coreGeo = new THREE.CylinderGeometry(0.06, 0.06, 1.0, 16);
+        coreGeo.translate(0, 0.5, 0);
+        const coreMat = new THREE.MeshBasicMaterial({
+          color: accentColor,
+          transparent: true,
+          opacity: 0.95
+        });
+        const coreMesh = new THREE.Mesh(coreGeo, coreMat);
+        shaftGroup.add(coreMesh);
+
+        const sheathGeo = new THREE.CylinderGeometry(0.20, 0.38, 1.0, 16);
+        sheathGeo.translate(0, 0.5, 0);
+        const sheathMat = new THREE.MeshStandardMaterial({
+          color: mainColor,
+          emissive: mainColor,
+          emissiveIntensity: 0.45,
+          transparent: true,
+          opacity: 0.45,
+          roughness: 0.15,
+          metalness: 0.3
+        });
+        const sheathMesh = new THREE.Mesh(sheathGeo, sheathMat);
+        shaftGroup.add(sheathMesh);
+
+        // Manyetik halka
+        const midRingGeo = new THREE.TorusGeometry(0.34, 0.05, 12, 24);
+        midRingGeo.rotateX(Math.PI / 2);
+        midRingGeo.translate(0, 0.5, 0);
+        const midRingMat = new THREE.MeshBasicMaterial({
+          color: accentColor,
+          transparent: true,
+          opacity: 0.85
+        });
+        const midRing = new THREE.Mesh(midRingGeo, midRingMat);
+        shaftGroup.add(midRing);
+
+        // 3. Tepe Holo-Yayıcı Soket Başlığı
+        const topCap = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.55, 0.28, 0.18, 24),
+          new THREE.MeshStandardMaterial({
+            color: 0x05132d,
+            emissive: mainColor,
+            emissiveIntensity: 0.65,
+            roughness: 0.2,
+            metalness: 0.9
+          })
+        );
+        topSocket = topCap;
+
+      } else if (style === 'terminal') {
+        // =========================================================================
+        // STYLE 3: TAKTİK KOMUTA (Altıgen Zırh Pedi, 6 Köşeli Stealth Pilon & Çift Ray)
+        // =========================================================================
+        // 1. Zemin: 6 Köşeli Taktik Hedefleme Alanı + 4 Yönlü Kros Tırnakları
+        const hexPadGeo = new THREE.RingGeometry(0.7, 1.7, 6);
+        const hexPadMat = new THREE.MeshBasicMaterial({
+          color: mainColor,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.92
+        });
+        const hexPad = new THREE.Mesh(hexPadGeo, hexPadMat);
+        hexPad.rotation.x = -Math.PI / 2;
+        hexPad.position.y = 0.08;
+        groundGroup.add(hexPad);
+
+        // 4 Yönlü Nişangah Tırnakları
+        const tickPoints = [
+          new THREE.Vector3(-2.0, 0.09, 0), new THREE.Vector3(-1.3, 0.09, 0),
+          new THREE.Vector3(1.3, 0.09, 0), new THREE.Vector3(2.0, 0.09, 0),
+          new THREE.Vector3(0, 0.09, -2.0), new THREE.Vector3(0, 0.09, -1.3),
+          new THREE.Vector3(0, 0.09, 1.3), new THREE.Vector3(0, 0.09, 2.0)
+        ];
+        const tickGeo = new THREE.BufferGeometry().setFromPoints(tickPoints);
+        const tickMat = new THREE.LineBasicMaterial({ color: mainColor, transparent: true, opacity: 0.85 });
+        const crossTicks = new THREE.LineSegments(tickGeo, tickMat);
+        groundGroup.add(crossTicks);
+
+        const baseHex = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.65, 0.85, 0.18, 6),
+          new THREE.MeshStandardMaterial({
+            color: 0x081326,
+            emissive: mainColor,
+            emissiveIntensity: 0.35,
+            roughness: 0.4,
+            metalness: 0.85
+          })
+        );
+        baseHex.position.y = 0.09;
+        groundGroup.add(baseHex);
+
+        const centerPin = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.09, 0.09, 0.48, 12),
+          new THREE.MeshBasicMaterial({ color: accentColor })
+        );
+        centerPin.position.y = 0.24;
+        groundGroup.add(centerPin);
+
+        // 2. Dikey Sütun: 6 Köşeli Stealth Prizmatik Pilon + Çift Harici Kılavuz Lazer Rayı
+        const prismGeo = new THREE.CylinderGeometry(0.14, 0.38, 1.0, 6);
+        prismGeo.translate(0, 0.5, 0);
+        const prismMat = new THREE.MeshStandardMaterial({
+          color: 0x091933,
+          emissive: mainColor,
+          emissiveIntensity: 0.45,
+          roughness: 0.3,
+          metalness: 0.75,
+          transparent: true,
+          opacity: 0.92
+        });
+        const prismMesh = new THREE.Mesh(prismGeo, prismMat);
+        shaftGroup.add(prismMesh);
+
+        [-0.22, 0.22].forEach((xOff) => {
+          const railGeo = new THREE.CylinderGeometry(0.025, 0.025, 1.0, 8);
+          railGeo.translate(xOff, 0.5, 0);
+          const railMat = new THREE.MeshBasicMaterial({
+            color: accentColor,
+            transparent: true,
+            opacity: 0.95
+          });
+          const railMesh = new THREE.Mesh(railGeo, railMat);
+          shaftGroup.add(railMesh);
+        });
+
+        // 3. Tepe Ağır Hizmet Mekanik Taşıyıcı Kiriş
+        const crossbar = new THREE.Mesh(
+          new THREE.BoxGeometry(1.6, 0.14, 0.24),
+          new THREE.MeshStandardMaterial({
+            color: 0x07152b,
+            emissive: mainColor,
+            emissiveIntensity: 0.55,
+            roughness: 0.3,
+            metalness: 0.9
+          })
+        );
+        topSocket = crossbar;
+
+      } else {
+        // =========================================================================
+        // STYLE 1: KLASİK SİBER HUD (MEVCUT KORUNAN SÜTUN VE ZEMİN HALKASI)
+        // =========================================================================
+        const ringGeo = new THREE.RingGeometry(0.5, 1.3, 32);
+        const ringMat = new THREE.MeshBasicMaterial({
+          color: mainColor,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.90
+        });
+        const ring = new THREE.Mesh(ringGeo, ringMat);
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.y = 0.08;
+        groundGroup.add(ring);
+
+        const dot = new THREE.Mesh(
+          new THREE.SphereGeometry(0.42, 16, 16),
+          new THREE.MeshBasicMaterial({ color: 0xffffff })
+        );
+        dot.position.y = 0.1;
+        groundGroup.add(dot);
+
+        const beamGeo = new THREE.CylinderGeometry(0.08, 0.28, 1.0, 16);
+        beamGeo.translate(0, 0.5, 0);
+        const beamMat = new THREE.MeshBasicMaterial({
+          color: mainColor,
+          transparent: true,
+          opacity: role === 'gold' ? 0.85 : 0.60
+        });
+        const beamMesh = new THREE.Mesh(beamGeo, beamMat);
+        shaftGroup.add(beamMesh);
+
+        topSocket = null;
+      }
+
+      shaftGroup.scale.set(1, baseHeight, 1);
+      if (topSocket) {
+        topSocket.position.y = baseHeight;
+      }
+
+      pillarGroup.add(groundGroup);
+      pillarGroup.add(shaftGroup);
+      if (topSocket) {
+        pillarGroup.add(topSocket);
+      }
+
+      return {
+        pillarGroup,
+        groundGroup,
+        shaftGroup,
+        topSocket
+      };
+    };
+
     // Map to preserve existing base beacons with dynamic anti-collision state
     const activeBaseBeaconsMap = new Map<string, {
       group: THREE.Group;
       sprite: THREE.Sprite;
-      beamMesh: THREE.Mesh;
+      pillarGroup: THREE.Group;
+      shaftGroup: THREE.Group;
+      topSocket: THREE.Object3D | null;
       baseHeight: number;
       currentHeight: number;
       targetHeight: number;
@@ -863,6 +1547,10 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
       rank: number;
       role: 'gold' | 'cyan' | 'blue';
       metric: MapMetricType;
+      code: string;
+      name: string;
+      val: number;
+      style: MapBillboardStyle;
     }>();
 
     // Dedicated separate Hover Beacon instance
@@ -872,25 +1560,8 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
     hoverBeaconGroup.visible = false;
     scene.add(hoverBeaconGroup);
 
-    // Build hover beacon visual components with scalable stem
-    const hoverBeamGeo = new THREE.CylinderGeometry(0.08, 0.30, 1.0, 16);
-    hoverBeamGeo.translate(0, 0.5, 0); // Origin anchored at base
-    const hoverBeamMat = new THREE.MeshBasicMaterial({ color: 0x00f2fe, transparent: true, opacity: 0.85 });
-    const hoverBeamMesh = new THREE.Mesh(hoverBeamGeo, hoverBeamMat);
-    hoverBeamMesh.scale.set(1, 7.4, 1);
-    hoverBeaconGroup.add(hoverBeamMesh);
-
-    const hoverDot = new THREE.Mesh(new THREE.SphereGeometry(0.44, 16, 16), new THREE.MeshBasicMaterial({ color: 0xffffff }));
-    hoverDot.position.set(0, 0.1, 0);
-    hoverBeaconGroup.add(hoverDot);
-
-    const hoverRing = new THREE.Mesh(
-      new THREE.RingGeometry(0.5, 1.4, 32),
-      new THREE.MeshBasicMaterial({ color: 0x00f2fe, side: THREE.DoubleSide, transparent: true, opacity: 0.90 })
-    );
-    hoverRing.rotation.x = -Math.PI / 2;
-    hoverRing.position.set(0, 0.08, 0);
-    hoverBeaconGroup.add(hoverRing);
+    let hoverPillar = createPillarComponents(mapBillboardStyleRef.current, 'emerald', 0x00f2fe, 7.4);
+    hoverBeaconGroup.add(hoverPillar.pillarGroup);
 
     const hoverSpriteMat = new THREE.SpriteMaterial({ transparent: true });
     const hoverSprite = new THREE.Sprite(hoverSpriteMat);
@@ -923,49 +1594,24 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
         activeThemeRef.current === 'crimson-command' ? 0xf43f5e :
         0x00f2fe;
 
-      const mainColor = role === 'gold' ? 0xfbbf24 : role === 'cyan' ? themePrimaryHex : 0x38bdf8;
-
-      // Vertical tapered leader beam with origin at bottom
-      const beamGeo = new THREE.CylinderGeometry(0.08, 0.28, 1.0, 16);
-      beamGeo.translate(0, 0.5, 0);
-      const beamMat = new THREE.MeshBasicMaterial({
-        color: mainColor,
-        transparent: true,
-        opacity: role === 'gold' ? 0.85 : 0.60
-      });
-      const beamMesh = new THREE.Mesh(beamGeo, beamMat);
-      beamMesh.scale.set(1, baseHeight, 1);
-      group.add(beamMesh);
-
-      // Base glowing anchor dot
-      const dot = new THREE.Mesh(
-        new THREE.SphereGeometry(0.42, 16, 16),
-        new THREE.MeshBasicMaterial({ color: 0xffffff })
+      // 1. Build style-specific 3D Pillar & Ground Base
+      const pillar = createPillarComponents(
+        mapBillboardStyleRef.current,
+        role,
+        themePrimaryHex,
+        baseHeight
       );
-      dot.position.set(0, 0.1, 0);
-      group.add(dot);
+      group.add(pillar.pillarGroup);
 
-      // Static clean base ring on terrain
-      const ring = new THREE.Mesh(
-        new THREE.RingGeometry(0.5, 1.3, 32),
-        new THREE.MeshBasicMaterial({
-          color: mainColor,
-          side: THREE.DoubleSide,
-          transparent: true,
-          opacity: 0.90
-        })
-      );
-      ring.rotation.x = -Math.PI / 2;
-      ring.position.set(0, 0.08, 0);
-      group.add(ring);
-
-      // High-resolution billboard tag
+      // 2. High-resolution billboard tag
       const texture = createCyberBillboardTexture(
         rank,
         name,
         formatMetricDisplay(metric, val),
         getCategoryLabel(metric),
-        role
+        role,
+        mapBillboardStyleRef.current,
+        { code, val }
       );
       const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true });
       const sprite = new THREE.Sprite(spriteMat);
@@ -976,19 +1622,31 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
       return { 
         group, 
         sprite, 
-        beamMesh,
+        pillarGroup: pillar.pillarGroup,
+        shaftGroup: pillar.shaftGroup,
+        topSocket: pillar.topSocket,
         baseHeight, 
         currentHeight: baseHeight, 
         targetHeight: baseHeight, 
         repelOffsetY: 0,
         rank, 
         role, 
-        metric 
+        metric,
+        code,
+        name,
+        val,
+        style: mapBillboardStyleRef.current
       };
     };
 
     // Update Base Beacons with Smart Adaptive Heights to Prevent Overlapping
     const updateBaseBeacons = (metric: MapMetricType, selCode: string) => {
+      const themePrimaryHex = 
+        activeThemeRef.current === 'gold-titanium' ? 0xf59e0b :
+        activeThemeRef.current === 'emerald-tech' ? 0x10b981 :
+        activeThemeRef.current === 'crimson-command' ? 0xf43f5e :
+        0x00f2fe;
+
       const ranked = Object.keys(PROVINCE_CODES).map((code) => ({
         code,
         name: PROVINCE_CODES[code],
@@ -1039,6 +1697,7 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
           if (entry) {
             baseBeaconsGroup.remove(entry.group);
             entry.sprite.material.dispose();
+            disposeGroup(entry.pillarGroup);
           }
           activeBaseBeaconsMap.delete(code);
         }
@@ -1052,20 +1711,46 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
         if (existing) {
           existing.baseHeight = assignedBaseH;
           existing.targetHeight = assignedBaseH;
+          existing.val = item.value;
+          existing.name = item.name;
 
-          if (existing.metric !== metric || existing.role !== item.role || existing.rank !== item.rank) {
+          // If style or role changed, rebuild the 3D pillar as well!
+          if (existing.role !== item.role || existing.style !== mapBillboardStyleRef.current) {
+            disposeGroup(existing.pillarGroup);
+            existing.group.remove(existing.pillarGroup);
+            const newPillar = createPillarComponents(
+              mapBillboardStyleRef.current,
+              item.role,
+              themePrimaryHex,
+              existing.currentHeight
+            );
+            existing.pillarGroup = newPillar.pillarGroup;
+            existing.shaftGroup = newPillar.shaftGroup;
+            existing.topSocket = newPillar.topSocket;
+            existing.group.add(newPillar.pillarGroup);
+          }
+
+          if (
+            existing.metric !== metric || 
+            existing.role !== item.role || 
+            existing.rank !== item.rank ||
+            existing.style !== mapBillboardStyleRef.current
+          ) {
             existing.sprite.material.map?.dispose();
             existing.sprite.material.map = createCyberBillboardTexture(
               item.rank,
               item.name,
               formatMetricDisplay(metric, item.value),
               getCategoryLabel(metric),
-              item.role
+              item.role,
+              mapBillboardStyleRef.current,
+              { code, val: item.value }
             );
             existing.sprite.material.needsUpdate = true;
             existing.role = item.role;
             existing.rank = item.rank;
             existing.metric = metric;
+            existing.style = mapBillboardStyleRef.current;
           }
         } else {
           const newEntry = createBeaconObject(
@@ -1163,7 +1848,9 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
         name,
         formatMetricDisplay(currentMetric, val),
         getCategoryLabel(currentMetric),
-        'emerald'
+        'emerald',
+        mapBillboardStyleRef.current,
+        { code, val }
       );
       hoverSprite.material.needsUpdate = true;
     };
@@ -1197,6 +1884,61 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
     updateBaseBeaconsRef.current = updateBaseBeacons;
     updateHoverBeaconRef.current = updateHoverBeacon;
     updateProvincesVisualRef.current = updateProvincesVisual;
+
+    // Direct synchronous updater for changing 3D map billboard styles on the fly
+    applyBillboardStyleRef.current = (newStyle: MapBillboardStyle) => {
+      mapBillboardStyleRef.current = newStyle;
+
+      const themePrimaryHex = 
+        activeThemeRef.current === 'gold-titanium' ? 0xf59e0b :
+        activeThemeRef.current === 'emerald-tech' ? 0x10b981 :
+        activeThemeRef.current === 'crimson-command' ? 0xf43f5e :
+        0x00f2fe;
+
+      activeBaseBeaconsMap.forEach((entry, code) => {
+        // 1. Rebuild 3D Pillar (Column + ground base + top socket)
+        disposeGroup(entry.pillarGroup);
+        entry.group.remove(entry.pillarGroup);
+
+        const newPillar = createPillarComponents(
+          newStyle,
+          entry.role,
+          themePrimaryHex,
+          entry.currentHeight
+        );
+        entry.pillarGroup = newPillar.pillarGroup;
+        entry.shaftGroup = newPillar.shaftGroup;
+        entry.topSocket = newPillar.topSocket;
+        entry.group.add(newPillar.pillarGroup);
+
+        // 2. Rebuild Tag Sprite Texture
+        entry.sprite.material.map?.dispose();
+        entry.sprite.material.map = createCyberBillboardTexture(
+          entry.rank,
+          entry.name,
+          formatMetricDisplay(entry.metric, entry.val),
+          getCategoryLabel(entry.metric),
+          entry.role,
+          newStyle,
+          { code, val: entry.val }
+        );
+        entry.sprite.material.needsUpdate = true;
+        entry.style = newStyle;
+      });
+
+      // 3. Rebuild Hover Pillar
+      if (hoverPillar) {
+        disposeGroup(hoverPillar.pillarGroup);
+        hoverBeaconGroup.remove(hoverPillar.pillarGroup);
+      }
+      hoverPillar = createPillarComponents(newStyle, 'emerald', themePrimaryHex, 7.4);
+      hoverBeaconGroup.add(hoverPillar.pillarGroup);
+
+      if (hoverBeaconGroup.visible && hoveredMesh) {
+        const hCode = hoveredMesh.userData?.code;
+        if (hCode) updateHoverBeacon(hCode);
+      }
+    };
 
     // Initial builds
     updateProvincesVisual();
@@ -1256,6 +1998,9 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
           }
         }
         hoveredMesh = hitMesh || null;
+      } else if (hitMesh && hitMesh.userData?.code) {
+        // Continuously update cursor coordinates while hovering the province
+        setHoveredInfo((prev) => prev ? { ...prev, x: event.clientX, y: event.clientY } : null);
       }
     };
 
@@ -1374,9 +2119,12 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
         // Smooth transition
         item.currentHeight += (item.targetHeight - item.currentHeight) * 0.14;
 
-        // Update card position and glowing leader beam scale
+        // Update card position and glowing pillar scale
         item.sprite.position.y = item.currentHeight + 0.6;
-        item.beamMesh.scale.y = Math.max(0.8, item.currentHeight);
+        item.shaftGroup.scale.set(1, Math.max(0.8, item.currentHeight), 1);
+        if (item.topSocket) {
+          item.topSocket.position.y = item.currentHeight;
+        }
 
         // Bring hovered card forward in renderOrder
         const isHovered = hoveredInfo?.code === item.group.userData.code;
@@ -1390,6 +2138,12 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
       if (hoverBeaconGroup.visible) {
         if (hoverBeaconGroup.userData?.isBeacon) {
           hoverBeaconGroup.scale.y += (hoverBeaconGroup.userData.targetScaleY - hoverBeaconGroup.scale.y) * 0.14;
+        }
+        if (hoverPillar) {
+          hoverPillar.shaftGroup.scale.set(1, 7.4, 1);
+          if (hoverPillar.topSocket) {
+            hoverPillar.topSocket.position.y = 7.4;
+          }
         }
         const dist = camPos.distanceTo(hoverBeaconGroup.getWorldPosition(tempVecB));
         const scaleMult = Math.max(0.75, Math.min(2.1, Math.pow(dist / 42, 0.72)));
@@ -1856,6 +2610,87 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
             )}
           </div>
 
+          {/* 3D Map Billboard Style Selector */}
+          <div className="relative">
+            <button
+              onClick={() => setIsPresentationOpen(!isPresentationOpen)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-['Rajdhani'] font-bold rounded-xs transition-all ${
+                isPresentationOpen
+                  ? 'bg-amber-400 text-slate-950 shadow-[0_0_12px_#f59e0b]'
+                  : 'text-amber-300 hover:text-white bg-amber-400/10 border border-amber-400/40 hover:bg-amber-400/20'
+              }`}
+              title="Harita 3B Veri Kartı & Etiket Tasarımı"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline font-mono text-[10px] text-amber-200/80 uppercase">VERİ ETİKETİ:</span>
+              <span className="font-bold text-slate-100">
+                {BILLBOARD_STYLE_OPTIONS.find((p) => p.id === mapBillboardStyle)?.label}
+              </span>
+              <ChevronDown className={`w-3 h-3 text-amber-400 transition-transform ${isPresentationOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isPresentationOpen && (
+              <div
+                ref={presentationPopoverRef}
+                className="absolute top-full right-0 mt-2 z-50 w-80 p-2.5 bg-[#071328]/98 backdrop-blur-xl border border-amber-400/60 shadow-[0_8px_32px_rgba(0,0,0,0.7)] rounded-xs flex flex-col gap-1.5 select-none text-white animate-in fade-in zoom-in-95 duration-150"
+              >
+                <div className="flex items-center justify-between pb-1.5 border-b border-amber-500/30 text-xs font-['Rajdhani'] font-bold">
+                  <span className="flex items-center gap-1.5 uppercase text-amber-300">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    Harita Veri Gösterim Tasarımı
+                  </span>
+                  <span className="font-mono text-[10px] text-slate-400">3 FARKLI TASARIM</span>
+                </div>
+
+                <div className="flex flex-col gap-1.5 pt-1">
+                  {BILLBOARD_STYLE_OPTIONS.map((opt) => {
+                    const isSelected = mapBillboardStyle === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        onClick={() => handleSelectBillboardStyle(opt.id)}
+                        className={`flex items-start gap-2.5 p-2 rounded-xs text-left transition-all ${
+                          isSelected
+                            ? 'bg-amber-500/20 border border-amber-400 text-white shadow-[0_0_12px_rgba(245,158,11,0.3)]'
+                            : 'bg-[#0a1c38]/60 border border-transparent hover:bg-cyan-950/80 hover:border-amber-500/40 text-slate-300 hover:text-white'
+                        }`}
+                      >
+                        <div className={`p-1.5 rounded-xs mt-0.5 shrink-0 ${isSelected ? 'bg-amber-400 text-slate-950' : 'bg-cyan-950 text-amber-400 border border-amber-500/30'}`}>
+                          {opt.id === 'capsule' ? (
+                            <Compass className="w-3.5 h-3.5" />
+                          ) : opt.id === 'terminal' ? (
+                            <Crosshair className="w-3.5 h-3.5" />
+                          ) : (
+                            <Layers className="w-3.5 h-3.5" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="font-['Rajdhani'] font-bold text-xs text-slate-100">
+                              {opt.label}
+                            </span>
+                            <span className={`text-[9px] font-mono px-1 py-0.2 rounded border shrink-0 ${
+                              isSelected ? 'bg-amber-400/20 text-amber-300 border-amber-400' : 'bg-cyan-950/90 text-cyan-300 border-cyan-500/30'
+                            }`}>
+                              {opt.badge}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-slate-300 font-['Rajdhani'] leading-tight mt-0.5">
+                            {opt.desc}
+                          </p>
+                          <div className="text-[9px] font-mono text-cyan-400/80 mt-1">
+                            Özellik: {opt.preview}
+                          </div>
+                        </div>
+                        {isSelected && <Check className="w-4 h-4 text-amber-400 shrink-0 mt-1" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
           <button
             onClick={resetCamera}
             className="flex items-center gap-1 px-2 py-1 text-xs font-['Rajdhani'] font-bold rounded transition-colors hover:text-white hover:bg-cyan-500/20 text-cyan-300"
@@ -1872,6 +2707,15 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
           >
             <Compass className="w-3.5 h-3.5 text-cyan-400" />
             <span className="hidden sm:inline">DİK AÇI</span>
+          </button>
+
+          <button
+            onClick={() => setIsDetailedGuideOpen(true)}
+            className="flex items-center gap-1 px-2 py-1 text-xs font-['Rajdhani'] font-bold rounded transition-colors hover:text-white hover:bg-cyan-500/20 text-cyan-300"
+            title="3B Harita Fare & Navigasyon Kullanım Rehberi"
+          >
+            <Mouse className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="hidden sm:inline">KULLANIM</span>
           </button>
         </div>
 
@@ -1899,26 +2743,413 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
         )}
       </div>
 
-      {/* Floating Hover Info Card */}
-      {hoveredInfo && (
-        <div
-          className="fixed pointer-events-none z-50 p-2.5 rounded shadow-2xl backdrop-blur-md border border-cyan-400 bg-[#040e20]/95 text-white text-xs font-['Rajdhani'] transition-transform transform -translate-x-1/2 -translate-y-full -mt-3 select-none shadow-[0_0_20px_rgba(0,242,254,0.35)]"
-          style={{ left: `${hoveredInfo.x}px`, top: `${hoveredInfo.y}px` }}
-        >
-          <div className="flex items-center gap-2 font-bold text-sm tracking-wider">
-            <span className="text-cyan-400 font-mono">#{hoveredInfo.code}</span>
-            <span className="text-white">{hoveredInfo.name.toUpperCase()}</span>
-            {hoveredInfo.agency && (
-              <span className="text-[10px] px-1.5 py-0.5 bg-cyan-950 text-cyan-300 border border-cyan-500/40 rounded-xs">
-                {hoveredInfo.agency}
-              </span>
+      {/* Floating Hover Info Card Synchronized with Selected Billboard Style */}
+      {hoveredInfo && (() => {
+        const rankData = provinceRanks.get(hoveredInfo.code);
+        const overview = getProvinceOverview(hoveredInfo.code);
+        const cardWidth = mapBillboardStyle === 'terminal' ? 320 : mapBillboardStyle === 'capsule' ? 280 : 210;
+        const clampedX = Math.min(window.innerWidth - cardWidth / 2 - 16, Math.max(cardWidth / 2 + 16, hoveredInfo.x));
+        const clampedY = Math.max(130, hoveredInfo.y);
+
+        // OPTION 1: KLASİK SİBER HUD
+        if (mapBillboardStyle === 'classic') {
+          return (
+            <div
+              className="fixed pointer-events-none z-50 p-2.5 rounded shadow-2xl backdrop-blur-md border border-cyan-400 bg-[#040e20]/95 text-white text-xs font-['Rajdhani'] transition-transform transform -translate-x-1/2 -translate-y-full -mt-3 select-none shadow-[0_0_20px_rgba(0,242,254,0.35)]"
+              style={{ left: `${clampedX}px`, top: `${clampedY}px` }}
+            >
+              <div className="flex items-center gap-2 font-bold text-sm tracking-wider">
+                <span className="text-cyan-400 font-mono">#{hoveredInfo.code}</span>
+                <span className="text-white">{hoveredInfo.name.toUpperCase()}</span>
+                {hoveredInfo.agency && (
+                  <span className="text-[10px] px-1.5 py-0.5 bg-cyan-950 text-cyan-300 border border-cyan-500/40 rounded-xs">
+                    {hoveredInfo.agency}
+                  </span>
+                )}
+              </div>
+              <div className="mt-1 flex items-center justify-between gap-4 font-mono text-[11px]">
+                <span className="text-slate-400">{getCategoryLabel(activeMetric)}:</span>
+                <span className="text-amber-400 font-bold">
+                  {formatMetricDisplay(activeMetric, hoveredInfo.value)}
+                </span>
+              </div>
+            </div>
+          );
+        }
+
+        // OPTION 2: HOLO-KAPSÜL CAM
+        if (mapBillboardStyle === 'capsule') {
+          return (
+            <div
+              className="fixed pointer-events-none z-50 p-3 rounded-2xl shadow-[0_0_30px_rgba(0,242,254,0.4)] backdrop-blur-xl border border-cyan-400/80 bg-[#030d22]/95 text-white text-xs font-['Rajdhani'] transition-transform transform -translate-x-1/2 -translate-y-full -mt-4 select-none w-72"
+              style={{ left: `${clampedX}px`, top: `${clampedY}px` }}
+            >
+              {/* Tactical Corner Brackets */}
+              <span className="absolute -top-1 -left-1 w-2.5 h-2.5 border-t-2 border-l-2 border-cyan-400 shadow-[0_0_8px_#00f2fe]" />
+              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 border-t-2 border-r-2 border-cyan-400 shadow-[0_0_8px_#00f2fe]" />
+              <span className="absolute -bottom-1 -left-1 w-2.5 h-2.5 border-b-2 border-l-2 border-cyan-400 shadow-[0_0_8px_#00f2fe]" />
+              <span className="absolute -bottom-1 -right-1 w-2.5 h-2.5 border-b-2 border-r-2 border-cyan-400 shadow-[0_0_8px_#00f2fe]" />
+
+              {/* Top Status Header */}
+              <div className="flex items-center justify-between border-b border-cyan-500/30 pb-1.5 mb-2 font-mono text-[10px]">
+                <div className="flex items-center gap-1.5 text-cyan-300 font-bold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                  <span>HOLO-KAPSÜL: #{hoveredInfo.code}</span>
+                </div>
+                {rankData && (
+                  <span className="bg-cyan-950/90 text-cyan-300 px-1.5 py-0.2 rounded border border-cyan-500/40 font-bold">
+                    TR #{rankData.rank} / {rankData.total}
+                  </span>
+                )}
+              </div>
+
+              {/* Province Title & Agency */}
+              <div className="flex items-baseline justify-between gap-2">
+                <h4 className="font-['Orbitron'] font-bold text-base tracking-wider text-white uppercase drop-shadow-[0_0_8px_rgba(0,242,254,0.5)]">
+                  {hoveredInfo.name}
+                </h4>
+                {hoveredInfo.agency && (
+                  <span className="text-[10px] font-mono text-cyan-400/90 tracking-wider">
+                    [{hoveredInfo.agency}]
+                  </span>
+                )}
+              </div>
+
+              {/* Active Metric Spotlight */}
+              <div className="mt-2 p-1.5 rounded-xs bg-[#061633]/85 border border-cyan-500/30 flex items-center justify-between">
+                <span className="text-slate-300 font-bold text-[11px] truncate max-w-[130px]">
+                  {getCategoryLabel(activeMetric)}:
+                </span>
+                <span className="font-['Orbitron'] font-bold text-sm text-amber-400 tracking-wide">
+                  {formatMetricDisplay(activeMetric, hoveredInfo.value)}
+                </span>
+              </div>
+
+              {/* Telemetry Scale Meter */}
+              {rankData && (
+                <div className="mt-2 space-y-1">
+                  <div className="flex justify-between items-center text-[10px] font-mono text-slate-400">
+                    <span>ULUSAL KALİBRASYON</span>
+                    <span className="text-cyan-300 font-bold">
+                      %{Math.round((hoveredInfo.value / rankData.maxVal) * 100)} ZİRVE PAYI
+                    </span>
+                  </div>
+                  <div className="w-full h-1.5 bg-[#020817] rounded-full overflow-hidden border border-cyan-500/30 p-[1px]">
+                    <div 
+                      className="h-full rounded-full bg-gradient-to-r from-cyan-500 via-sky-300 to-amber-400 shadow-[0_0_6px_#00f2fe]"
+                      style={{ width: `${Math.min(100, Math.max(3, (hoveredInfo.value / rankData.maxVal) * 100))}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        }
+
+        // OPTION 3: TAKTİK KOMUTA TERMİNALİ (Executive Çok Boyutlu Telemetri)
+        return (
+          <div
+            className="fixed pointer-events-none z-50 p-3 rounded-xs shadow-[0_12px_40px_rgba(0,0,0,0.85)] backdrop-blur-2xl border border-cyan-400/80 bg-[#051126]/98 text-white text-xs font-['Rajdhani'] transition-transform transform -translate-x-1/2 -translate-y-full -mt-4 select-none w-80 shadow-[0_0_35px_rgba(0,242,254,0.45)]"
+            style={{ left: `${clampedX}px`, top: `${clampedY}px` }}
+          >
+            {/* Top Holographic Header Bar */}
+            <div className="flex items-center justify-between border-b border-cyan-500/30 pb-2 mb-2">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-500/40 font-bold">
+                  #{hoveredInfo.code}
+                </span>
+                <div>
+                  <h4 className="font-['Orbitron'] font-black text-sm tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-white via-cyan-100 to-cyan-300 uppercase">
+                    {hoveredInfo.name}
+                  </h4>
+                  <div className="text-[10px] text-cyan-400/80 font-mono">
+                    {hoveredInfo.agency ? `KALKINMA AJANSI: ${hoveredInfo.agency}` : 'TÜRKİYE BÖLGESİ'}
+                  </div>
+                </div>
+              </div>
+
+              {rankData && (
+                <div className="text-right">
+                  <span className={`inline-flex items-center gap-1 font-['Orbitron'] text-[11px] font-bold px-2 py-0.5 rounded border ${
+                    rankData.rank === 1
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.4)]'
+                      : rankData.rank <= 3
+                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-400 shadow-[0_0_8px_rgba(0,242,254,0.3)]'
+                      : 'bg-[#0a1a36] text-slate-300 border-cyan-500/20'
+                  }`}>
+                    {rankData.rank === 1 ? '🏆 TR #1' : `TR #${rankData.rank}`}
+                  </span>
+                  <div className="text-[9px] font-mono text-slate-400 mt-0.5">81 İL İÇİNDE</div>
+                </div>
+              )}
+            </div>
+
+            {/* Primary Metric Spotlight Hero Box */}
+            <div className="p-2 rounded bg-gradient-to-r from-[#091e42] to-[#040e24] border border-cyan-500/40 flex items-center justify-between mb-2 shadow-inner">
+              <div>
+                <span className="text-[10px] font-mono uppercase text-cyan-300 block">
+                  {getCategoryLabel(activeMetric)}
+                </span>
+                <span className="font-['Orbitron'] font-bold text-base text-amber-300 drop-shadow-[0_0_6px_rgba(245,158,11,0.5)]">
+                  {formatMetricDisplay(activeMetric, hoveredInfo.value)}
+                </span>
+              </div>
+              {rankData && (
+                <div className="text-right font-mono text-[10px] text-slate-300">
+                  <span className="text-cyan-400 font-bold block">İLK %{rankData.topPct}</span>
+                  <span className="opacity-70">DİLİMİNDE</span>
+                </div>
+              )}
+            </div>
+
+            {/* 3-Column Micro Telemetry Strip (Population, GDP, SES) */}
+            {overview && (
+              <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-cyan-500/20 text-center font-mono">
+                <div className="bg-[#071733]/80 p-1.5 rounded-xs border border-cyan-500/20">
+                  <span className="text-[9px] text-slate-400 block font-['Rajdhani'] font-bold">NÜFUS</span>
+                  <span className="text-[11px] font-bold text-white">
+                    {(overview.population / 1000000).toFixed(2)}M
+                  </span>
+                </div>
+                <div className="bg-[#071733]/80 p-1.5 rounded-xs border border-cyan-500/20">
+                  <span className="text-[9px] text-slate-400 block font-['Rajdhani'] font-bold">GSYH / KİŞİ</span>
+                  <span className="text-[11px] font-bold text-amber-300">
+                    ${overview.gdpPerCapitaUsd.toLocaleString()}
+                  </span>
+                </div>
+                <div className="bg-[#071733]/80 p-1.5 rounded-xs border border-cyan-500/20">
+                  <span className="text-[9px] text-slate-400 block font-['Rajdhani'] font-bold">SEGE SKORU</span>
+                  <span className="text-[11px] font-bold text-cyan-300">
+                    {overview.sesScore}
+                  </span>
+                </div>
+              </div>
             )}
+
+            {/* Interactive Hint */}
+            <div className="mt-2 text-[10px] font-['Rajdhani'] text-cyan-400/90 flex items-center justify-between border-t border-cyan-500/20 pt-1.5">
+              <span className="flex items-center gap-1 font-bold">
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                İl Karnesini Açmak İçin Haritaya Tıklayın
+              </span>
+              <span className="font-mono text-cyan-300 text-[11px]">➔</span>
+            </div>
           </div>
-          <div className="mt-1 flex items-center justify-between gap-4 font-mono text-[11px]">
-            <span className="text-slate-400">{getCategoryLabel(activeMetric)}:</span>
-            <span className="text-amber-400 font-bold">
-              {formatMetricDisplay(activeMetric, hoveredInfo.value)}
-            </span>
+        );
+      })()}
+
+      {/* 3D Canvas Navigation & Mouse Controls Guide Bar (Bottom-Left) */}
+      <div className="absolute bottom-3 left-4 z-20 flex flex-col gap-1 select-none pointer-events-auto">
+        {isControlsCollapsed ? (
+          <button
+            onClick={() => setIsControlsCollapsed(false)}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-xs bg-[#05132d]/92 hover:bg-[#071938] text-cyan-300 hover:text-white border border-cyan-500/40 shadow-[0_0_15px_rgba(0,242,254,0.25)] backdrop-blur-md text-xs font-['Rajdhani'] font-bold transition-all"
+            title="Fare ile Harita Kullanım Rehberini Aç"
+          >
+            <Mouse className="w-3.5 h-3.5 text-cyan-400" />
+            <span>3B KONTROL REHBERİ</span>
+            <ChevronUp className="w-3 h-3 text-cyan-400" />
+          </button>
+        ) : (
+          <div className="flex flex-col gap-1.5 p-2 sm:p-2.5 rounded-xs bg-[#040e24]/95 backdrop-blur-xl border border-cyan-500/40 shadow-[0_8px_30px_rgba(0,0,0,0.7)] text-white text-xs font-['Rajdhani'] max-w-[calc(100vw-32px)] sm:max-w-none animate-in fade-in slide-in-from-bottom-2 duration-150">
+            {/* Header */}
+            <div className="flex items-center justify-between gap-4 pb-1 border-b border-cyan-500/30 font-bold">
+              <div className="flex items-center gap-1.5 text-cyan-300">
+                <Mouse className="w-3.5 h-3.5 text-cyan-400" />
+                <span className="tracking-wider uppercase text-[11px] font-mono">3B KULLANIM KONTROLLERİ</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsDetailedGuideOpen(true)}
+                  className="text-[10px] font-mono text-cyan-400 hover:text-white underline decoration-cyan-500/50 hover:decoration-white transition-colors"
+                  title="Detaylı fare ve dokunmatik şemasını aç"
+                >
+                  DETAYLI ŞEMA
+                </button>
+                <button
+                  onClick={() => setIsControlsCollapsed(true)}
+                  className="p-0.5 text-slate-400 hover:text-white transition-colors"
+                  title="Rehberi simge durumuna küçült"
+                >
+                  <ChevronDown className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Control Badges Row */}
+            <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-[11px]">
+              {/* Sol Tuş */}
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-xs bg-[#081a38]/85 border border-cyan-500/30">
+                <span className="px-1.5 py-0.2 rounded bg-cyan-500/25 text-cyan-300 font-mono text-[9px] font-bold border border-cyan-500/40">
+                  SOL TUŞ + SÜRÜKLE
+                </span>
+                <span className="text-slate-200">3B Açıyı Döndür</span>
+              </div>
+
+              {/* Sağ Tuş */}
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-xs bg-[#081a38]/85 border border-amber-500/30">
+                <span className="px-1.5 py-0.2 rounded bg-amber-500/25 text-amber-300 font-mono text-[9px] font-bold border border-amber-500/40">
+                  SAĞ TUŞ + SÜRÜKLE
+                </span>
+                <span className="text-slate-200 font-semibold text-amber-100">Haritayı Taşı / Kaydır (Pan)</span>
+              </div>
+
+              {/* Tekerlek */}
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-xs bg-[#081a38]/85 border border-cyan-500/30">
+                <span className="px-1.5 py-0.2 rounded bg-cyan-500/25 text-cyan-300 font-mono text-[9px] font-bold border border-cyan-500/40">
+                  TEKERLEK
+                </span>
+                <span className="text-slate-200">Yakınlaştır / Uzaklaştır</span>
+              </div>
+
+              {/* Tıkla */}
+              <div className="hidden md:flex items-center gap-1.5 px-2 py-1 rounded-xs bg-[#081a38]/85 border border-emerald-500/30">
+                <span className="px-1.5 py-0.2 rounded bg-emerald-500/25 text-emerald-300 font-mono text-[9px] font-bold border border-emerald-500/40">
+                  İL TIKLA
+                </span>
+                <span className="text-slate-200">İl Karnesini Aç</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Detailed Mouse & Touch Navigation Modal */}
+      {isDetailedGuideOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="relative w-full max-w-xl bg-[#051126] border border-cyan-400/80 rounded-xs shadow-[0_0_50px_rgba(0,242,254,0.35)] p-5 text-white font-['Rajdhani'] select-none">
+            {/* Corner cyber brackets */}
+            <span className="absolute -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-cyan-400 shadow-[0_0_8px_#00f2fe]" />
+            <span className="absolute -top-1 -right-1 w-3 h-3 border-t-2 border-r-2 border-cyan-400 shadow-[0_0_8px_#00f2fe]" />
+            <span className="absolute -bottom-1 -left-1 w-3 h-3 border-b-2 border-l-2 border-cyan-400 shadow-[0_0_8px_#00f2fe]" />
+            <span className="absolute -bottom-1 -right-1 w-3 h-3 border-b-2 border-r-2 border-cyan-400 shadow-[0_0_8px_#00f2fe]" />
+
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-cyan-500/30">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+                  <Mouse className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-['Orbitron'] font-bold text-base text-transparent bg-clip-text bg-gradient-to-r from-white via-cyan-100 to-cyan-300">
+                    3B HARİTA KULLANIM VE NAVİGASYON REHBERİ
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Üç boyutlu Türkiye haritasını fare veya dokunmatik ekranla kontrol etme kılavuzu
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsDetailedGuideOpen(false)}
+                className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Mouse Visual Diagram & Explanations */}
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4 py-4 items-center">
+              {/* Stylized Visual Mouse Graphic */}
+              <div className="md:col-span-2 flex flex-col items-center justify-center p-3 rounded bg-[#030919] border border-cyan-500/30">
+                <svg viewBox="0 0 120 180" className="w-28 h-40 filter drop-shadow-[0_0_12px_rgba(0,242,254,0.4)]">
+                  {/* Mouse Body */}
+                  <rect x="15" y="10" width="90" height="155" rx="45" fill="#081836" stroke="#00f2fe" strokeWidth="2.5" />
+                  
+                  {/* Left Button (Highlighted Cyan) */}
+                  <path d="M 18 55 L 18 50 C 18 28 32 15 56 12 L 56 68 L 18 68 Z" fill="rgba(0, 242, 254, 0.35)" stroke="#00f2fe" strokeWidth="1.5" />
+                  
+                  {/* Right Button (Highlighted Amber) */}
+                  <path d="M 102 55 L 102 50 C 102 28 88 15 64 12 L 64 68 L 102 68 Z" fill="rgba(245, 158, 11, 0.40)" stroke="#f59e0b" strokeWidth="1.5" />
+
+                  {/* Divider line */}
+                  <line x1="60" y1="12" x2="60" y2="70" stroke="#00f2fe" strokeWidth="1.5" />
+                  <line x1="18" y1="68" x2="102" y2="68" stroke="#00f2fe" strokeWidth="1.5" />
+
+                  {/* Scroll Wheel (Highlighted White / Sky Blue) */}
+                  <rect x="54" y="24" width="12" height="28" rx="6" fill="#38bdf8" stroke="#ffffff" strokeWidth="1.5" className="animate-pulse" />
+                  
+                  {/* Labels on Graphic */}
+                  <text x="36" y="44" fill="#00f2fe" fontSize="10" fontWeight="bold" textAnchor="middle" fontFamily="Rajdhani">SOL</text>
+                  <text x="84" y="44" fill="#fbbf24" fontSize="10" fontWeight="bold" textAnchor="middle" fontFamily="Rajdhani">SAĞ</text>
+                  <text x="60" y="115" fill="#ffffff" fontSize="11" fontWeight="bold" textAnchor="middle" fontFamily="Rajdhani">3B ORBİT</text>
+                  <text x="60" y="130" fill="#94a3b8" fontSize="9" textAnchor="middle" fontFamily="monospace">KONTROL</text>
+                </svg>
+                <span className="text-[10px] font-mono text-cyan-300 mt-1 uppercase tracking-wider">İki Tuş + Tekerlek</span>
+              </div>
+
+              {/* Explanations List */}
+              <div className="md:col-span-3 flex flex-col gap-2.5">
+                {/* 1. Sol Tık */}
+                <div className="p-2.5 rounded bg-[#081b3d]/70 border-l-4 border-cyan-400 flex items-start gap-2.5">
+                  <div className="w-6 h-6 rounded bg-cyan-500/20 text-cyan-300 flex items-center justify-center shrink-0 mt-0.5 font-bold font-mono text-xs">
+                    1
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-white text-xs">SOL TUŞ + SÜRÜKLE</span>
+                      <span className="px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-300 border border-cyan-500/40 text-[9px] font-mono font-bold">
+                        3B AÇI (ORBIT)
+                      </span>
+                    </div>
+                    <p className="text-slate-300 text-[11px] leading-relaxed mt-0.5">
+                      Fare sol tuşuna basılı tutarak imleci hareket ettirin. Haritayı 360° serbest açıyla çevirip farklı yönlerden inceleyebilirsiniz.
+                    </p>
+                  </div>
+                </div>
+
+                {/* 2. Sağ Tık */}
+                <div className="p-2.5 rounded bg-[#081b3d]/70 border-l-4 border-amber-400 flex items-start gap-2.5">
+                  <div className="w-6 h-6 rounded bg-amber-500/20 text-amber-300 flex items-center justify-center shrink-0 mt-0.5 font-bold font-mono text-xs">
+                    2
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-amber-200 text-xs">SAĞ TUŞ + SÜRÜKLE</span>
+                      <span className="px-1.5 py-0.2 rounded bg-amber-950 text-amber-300 border border-amber-500/40 text-[9px] font-mono font-bold">
+                        TAŞI / KAYDIR (PAN)
+                      </span>
+                    </div>
+                    <p className="text-slate-300 text-[11px] leading-relaxed mt-0.5">
+                      Fare sağ tuşuna basılı tutarak sürükleyin. Haritayı ekran üzerinde sağa, sola, yukarı ve aşağı taşıyabilirsiniz.
+                    </p>
+                  </div>
+                </div>
+
+                {/* 3. Tekerlek */}
+                <div className="p-2.5 rounded bg-[#081b3d]/70 border-l-4 border-sky-400 flex items-start gap-2.5">
+                  <div className="w-6 h-6 rounded bg-sky-500/20 text-sky-300 flex items-center justify-center shrink-0 mt-0.5 font-bold font-mono text-xs">
+                    3
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-white text-xs">TEKERLEK (SCROLL)</span>
+                      <span className="px-1.5 py-0.2 rounded bg-sky-950 text-sky-300 border border-sky-500/40 text-[9px] font-mono font-bold">
+                        ZOOM
+                      </span>
+                    </div>
+                    <p className="text-slate-300 text-[11px] leading-relaxed mt-0.5">
+                      Fare tekerleğini ileri ve geri kaydırarak haritaya yakınlaşabilir veya tüm Türkiye'yi görecek şekilde uzaklaşabilirsiniz.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Touch / Trackpad Additional Info */}
+            <div className="pt-3 border-t border-cyan-500/30 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2 text-slate-300">
+                <Hand className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>
+                  <strong className="text-white">Dokunmatik / Touchpad:</strong> Tek parmakla açıyı döndür, iki parmakla haritayı taşı ve kıstırarak (pinch) yakınlaş.
+                </span>
+              </div>
+              <button
+                onClick={() => setIsDetailedGuideOpen(false)}
+                className="px-4 py-1.5 rounded-xs bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold font-['Rajdhani'] tracking-wider shadow-[0_0_15px_#00f2fe] transition-all shrink-0 w-full sm:w-auto text-center"
+              >
+                ANLADIM, KAPAT
+              </button>
+            </div>
           </div>
         </div>
       )}
