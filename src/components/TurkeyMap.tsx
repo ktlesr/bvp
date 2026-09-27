@@ -8,7 +8,8 @@ import {
   computeProvinceMetric, 
   formatMetricDisplay, 
   getCategoryLabel, 
-  METRIC_CATALOG 
+  METRIC_CATALOG,
+  isAscendingMetric
 } from '../data/metricCatalog';
 import { DashboardMode } from './Header';
 import { ThemeMode } from '../utils/theme';
@@ -126,7 +127,10 @@ export const TurkeyMap: React.FC<TurkeyMapProps> = ({
   const getColor = (val: number, isSelected: boolean) => {
     if (isSelected) return '#f6d365'; // Vibrant gold for selected
     if (maxVal === minVal) return 'rgba(0, 242, 254, 0.4)';
-    const ratio = Math.max(0, Math.min(1, (val - minVal) / (maxVal - minVal)));
+    const isAsc = isAscendingMetric(activeMetric);
+    const ratio = isAsc
+      ? Math.max(0, Math.min(1, (maxVal - val) / (maxVal - minVal)))
+      : Math.max(0, Math.min(1, (val - minVal) / (maxVal - minVal)));
     
     // Multi-step cyber color interpolation: deep navy -> cyan -> electric blue -> bright neon
     if (ratio < 0.2) return 'rgba(10, 36, 74, 0.75)';
@@ -433,8 +437,8 @@ export const TurkeyMap: React.FC<TurkeyMapProps> = ({
       {/* Bottom Map Legend Bar */}
       <div className="absolute bottom-3 left-4 z-20 flex flex-col gap-1 bg-[#030919]/80 backdrop-blur-md px-3 py-1.5 rounded-xs border border-cyan-500/30">
         <div className="flex items-center justify-between text-[10px] font-mono text-cyan-300/80">
-          <span>DÜŞÜK: {formatMetricVal(minVal)}</span>
-          <span className="ml-4">YÜKSEK: {formatMetricVal(maxVal)}</span>
+          <span>{isAscendingMetric(activeMetric) ? 'AZ GELİŞMİŞ: 81. Sıra' : `DÜŞÜK: ${formatMetricVal(minVal)}`}</span>
+          <span className="ml-4">{isAscendingMetric(activeMetric) ? 'EN GELİŞMİŞ: 1. Sıra' : `YÜKSEK: ${formatMetricVal(maxVal)}`}</span>
         </div>
         <div className="w-48 h-2 rounded-xs bg-gradient-to-r from-[#0a244a] via-[#0084c4] to-[#00f2fe] border border-cyan-400/40" />
       </div>

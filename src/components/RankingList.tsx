@@ -1,6 +1,6 @@
 import React from 'react';
 import { PROVINCE_CODES, REGIONS, PROVINCE_TO_CODE } from '../data/regions';
-import { MapMetricType, computeProvinceMetric, computeRegionMetric, formatMetricDisplay } from '../data/metricCatalog';
+import { MapMetricType, computeProvinceMetric, computeRegionMetric, formatMetricDisplay, isAscendingMetric } from '../data/metricCatalog';
 
 interface RankingListProps {
   activeMetric: MapMetricType;
@@ -19,6 +19,8 @@ export const RankingList: React.FC<RankingListProps> = ({
   selectedRegionCode,
   onSelectRegion
 }) => {
+  const isAsc = isAscendingMetric(activeMetric);
+
   // Compute metric for all 81 provinces or 26 regions
   const rankings = React.useMemo(() => {
     if (mapLevel === 'region') {
@@ -29,7 +31,11 @@ export const RankingList: React.FC<RankingListProps> = ({
         value: computeRegionMetric(r.code, activeMetric),
         primaryProvinceCode: PROVINCE_TO_CODE[r.provinces[0]] || '1'
       }));
-      list.sort((a, b) => b.value - a.value);
+      if (isAsc) {
+        list.sort((a, b) => a.value - b.value);
+      } else {
+        list.sort((a, b) => b.value - a.value);
+      }
       return list;
     }
 
@@ -44,10 +50,14 @@ export const RankingList: React.FC<RankingListProps> = ({
         value
       });
     }
-    // Sort descending
-    list.sort((a, b) => b.value - a.value);
+    // Sort according to metric direction (ascending for SEGE rank, descending for others)
+    if (isAsc) {
+      list.sort((a, b) => a.value - b.value);
+    } else {
+      list.sort((a, b) => b.value - a.value);
+    }
     return list;
-  }, [activeMetric, mapLevel]);
+  }, [activeMetric, mapLevel, isAsc]);
 
   const top10 = rankings.slice(0, 8);
   const maxVal = top10[0]?.value || 1;
@@ -62,7 +72,9 @@ export const RankingList: React.FC<RankingListProps> = ({
         const isSelected = mapLevel === 'region' 
           ? item.code === selectedRegionCode
           : item.code === selectedProvinceCode;
-        const pct = Math.min(100, Math.max(8, (item.value / maxVal) * 100));
+        const pct = isAsc
+          ? Math.min(100, Math.max(8, ((82 - item.value) / 81) * 100))
+          : Math.min(100, Math.max(8, (item.value / maxVal) * 100));
 
         return (
           <div

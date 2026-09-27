@@ -38,6 +38,7 @@ import { getProvinceExport } from '../data/tradeData';
 import { getProvinceOSB, ProvinceOSB } from '../data/osbData';
 import { getWomenShare } from '../data/womenTradeData';
 import { getProvinceOverview, ProvinceOverview } from '../data/demographyData';
+import { getProvinceSegeRank, getProvinceSegeHistory } from '../data/segeData';
 import { computeProvinceMetric, computeRegionMetric } from '../data/metricCatalog';
 
 interface ProvinceDossierModalProps {
@@ -154,7 +155,7 @@ export const ProvinceDossierModal: React.FC<ProvinceDossierModalProps> = ({
       weightedEmployment += p.overview.employmentRate * popWeight;
       weightedUnemployment += p.overview.unemploymentRate * popWeight;
       weightedEducation += p.overview.avgEducationYears * popWeight;
-      weightedSes += p.overview.sesScore * popWeight;
+      weightedSes += getProvinceSegeRank(p.code, '2025') * popWeight;
       weightedHospitalBeds += p.overview.hospitalBedsPer100k * popWeight;
       weightedCleanWater += p.overview.cleanWaterPct * popWeight;
       weightedWasteService += p.overview.wasteServicePct * popWeight;
@@ -187,7 +188,7 @@ export const ProvinceDossierModal: React.FC<ProvinceDossierModalProps> = ({
         employmentRate: Number(weightedEmployment.toFixed(1)),
         unemploymentRate: Number(weightedUnemployment.toFixed(1)),
         avgEducationYears: Number(weightedEducation.toFixed(1)),
-        sesScore: Number(weightedSes.toFixed(1)),
+        segeRankAvg: Number(weightedSes.toFixed(1)),
         hospitalBedsPer100k: Math.round(weightedHospitalBeds),
         cleanWaterPct: Number(weightedCleanWater.toFixed(1)),
         wasteServicePct: Number(weightedWasteService.toFixed(1))
@@ -775,14 +776,16 @@ export const ProvinceDossierModal: React.FC<ProvinceDossierModalProps> = ({
                       <span className="text-[10px] text-slate-400/70 block mt-0.5 font-mono">Örgün Eğitim Ort.</span>
                     </div>
                     <div className="bg-[#040e24] p-2.5 rounded border border-cyan-500/10">
-                      <span className="text-slate-400 block text-[11px] mb-0.5">SEGE Gelişmişlik</span>
-                      <span className="font-mono text-base font-bold text-amber-300">{regionalData.overview.sesScore} / 100</span>
-                      <span className="text-[10px] text-slate-400/70 block mt-0.5 font-mono">Sosyoekonomik Skoru</span>
+                      <span className="text-slate-400 block text-[11px] mb-0.5">SEGE Sıralama Ort.</span>
+                      <span className="font-mono text-base font-bold text-amber-300">{regionalData.overview.segeRankAvg}. Sıra</span>
+                      <span className="text-[10px] text-slate-400/70 block mt-0.5 font-mono">Bölgesel Ağırlıklı Ort.</span>
                     </div>
                     <div className="bg-[#040e24] p-2.5 rounded border border-cyan-500/10">
                       <span className="text-slate-400 block text-[11px] mb-0.5">Hastane Yatak / 100k</span>
                       <span className="font-mono text-base font-bold text-emerald-400">{regionalData.overview.hospitalBedsPer100k} Yatak</span>
-                      <span className="text-[10px] text-slate-400/70 block mt-0.5 font-mono">Sağlık Kapasitesi</span>
+                      <span className="text-[10px] text-slate-400/70 block mt-0.5 font-mono">
+                        Toplam: ~{Math.round(regionalData.overview.hospitalBedsPer100k * regionalData.overview.population / 100000).toLocaleString('tr-TR')}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -809,7 +812,7 @@ export const ProvinceDossierModal: React.FC<ProvinceDossierModalProps> = ({
                           <th className="py-2 px-3 text-center">OSB (Faal)</th>
                           <th className="py-2 px-3 text-right">Nüfus</th>
                           <th className="py-2 px-3 text-right">GSYH / Kişi</th>
-                          <th className="py-2 px-3 text-center">SEGE Skoru</th>
+                          <th className="py-2 px-3 text-center">İl SEGE-2025</th>
                           <th className="py-2 px-3 text-center no-export">İşlem</th>
                         </tr>
                       </thead>
@@ -859,8 +862,8 @@ export const ProvinceDossierModal: React.FC<ProvinceDossierModalProps> = ({
                               <td className="py-2.5 px-3 text-right text-emerald-400 font-bold">
                                 ${prov.overview.gdpPerCapitaUsd.toLocaleString('tr-TR')}
                               </td>
-                              <td className="py-2.5 px-3 text-center text-cyan-300">
-                                {prov.overview.sesScore}
+                              <td className="py-2.5 px-3 text-center text-cyan-300 font-bold">
+                                {getProvinceSegeRank(prov.code, '2025')}. Sıra
                               </td>
                               <td className="py-2.5 px-3 text-center no-export">
                                 <button
@@ -1012,12 +1015,25 @@ export const ProvinceDossierModal: React.FC<ProvinceDossierModalProps> = ({
                       <span className="font-mono text-sm font-bold text-white">{provStats.avgEducationYears} Yıl</span>
                     </div>
                     <div className="bg-[#040e24] p-2 rounded border border-cyan-500/10">
-                      <span className="text-slate-400 block text-[11px]">SES Seviye Skoru</span>
-                      <span className="font-mono text-sm font-bold text-cyan-300">{provStats.sesScore} / 100</span>
+                      <span className="text-slate-400 block text-[11px]">Resmi İl SEGE-2025</span>
+                      <span className="font-mono text-sm font-bold text-amber-300">
+                        {getProvinceSegeRank(selectedProvinceCode, '2025')}. Sıra
+                      </span>
+                      {(() => {
+                        const hist = getProvinceSegeHistory(selectedProvinceCode);
+                        return hist ? (
+                          <span className="text-[9px] text-slate-400 block font-mono">
+                            '17: #{hist['2017']} · '11: #{hist['2011']}
+                          </span>
+                        ) : null;
+                      })()}
                     </div>
                     <div className="bg-[#040e24] p-2 rounded border border-cyan-500/10">
                       <span className="text-slate-400 block text-[11px]">Hastane Yatak / 100k</span>
                       <span className="font-mono text-sm font-bold text-white">{provStats.hospitalBedsPer100k} Yatak</span>
+                      <span className="text-[9px] text-slate-400 block font-mono">
+                        Toplam: ~{Math.round(provStats.hospitalBedsPer100k * provStats.population / 100000).toLocaleString('tr-TR')} Yatak
+                      </span>
                     </div>
                   </div>
                 </div>

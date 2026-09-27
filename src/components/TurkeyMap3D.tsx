@@ -36,7 +36,8 @@ import {
   computeProvinceMetric, 
   computeRegionMetric,
   getCategoryLabel, 
-  formatMetricDisplay 
+  formatMetricDisplay,
+  isAscendingMetric
 } from '../data/metricCatalog';
 import { getProvinceOverview } from '../data/demographyData';
 import { DashboardMode } from './Header';
@@ -781,11 +782,11 @@ const CANVAS_THEMES: {
     icon: <PieChart className="w-3.5 h-3.5" />,
     items: [
       { id: 'gdp', label: 'Kişi Başına GSYH', unit: '$ / Kişi', source: 'TÜİK İl GSYH', desc: 'Kişi başına düşen gayrisafi yurtiçi hasıla düzeyi' },
-      { id: 'ses', label: 'SEGE Gelişmişlik Endeksi', unit: 'Endeks Skoru', source: 'SEGE Endeksi', desc: 'İllerin Sosyoekonomik Gelişmişlik Sıralaması Skoru' },
+      { id: 'ses', label: 'İl SEGE Sıralaması (2025)', unit: '. Sıra', source: 'Sanayi ve Teknoloji Bak.', desc: 'İllerin Sosyoekonomik Gelişmişlik Sıralaması (1: En Gelişmiş İl)' },
       { id: 'population', label: 'Toplam İl Nüfusu', unit: 'Kişi', source: 'TÜİK ADNKS', desc: 'Adrese Dayalı Nüfus Kayıt Sistemi verisi' },
       { id: 'unemployment', label: 'İşsizlik Oranı', unit: '% Oran', source: 'TÜİK & İŞKUR', desc: 'İl bazında kayıtlı iş arayan işsizlik payı' },
       { id: 'education', label: 'Ortalama Eğitim Süresi', unit: 'Yıl', source: 'MEB & TÜİK', desc: '25 yaş üzeri ortalama tamamlanan okul yılı' },
-      { id: 'hospital_beds', label: '10.000 Kişiye Düşen Yatak', unit: 'Yatak', source: 'Sağlık Verisi', desc: 'İldeki kamu ve özel hastane yatak kapasitesi' },
+      { id: 'hospital_beds', label: '100.000 Kişiye Düşen Yatak', unit: 'Yatak / 100K', source: 'T.C. Sağlık Bakanlığı', desc: '100.000 nüfus başına düşen toplam hastane yatak kapasitesi' },
     ]
   }
 ];
@@ -895,12 +896,17 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
 
   // Pre-calculate national ranking for all 81 provinces for the active metric
   const provinceRanks = useMemo(() => {
+    const isAsc = isAscendingMetric(activeMetric);
     const list = Object.entries(PROVINCE_CODES).map(([code, name]) => ({
       code,
       name,
       val: computeProvinceMetric(code, activeMetric)
     }));
-    list.sort((a, b) => b.val - a.val);
+    if (isAsc) {
+      list.sort((a, b) => a.val - b.val);
+    } else {
+      list.sort((a, b) => b.val - a.val);
+    }
     const rankMap = new Map<string, { rank: number; total: number; topPct: number; maxVal: number }>();
     const maxVal = list[0]?.val || 1;
     list.forEach((item, idx) => {
@@ -913,13 +919,18 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
 
   // Pre-calculate ranking for all 26 NUTS-2 regions for the active metric
   const regionRanks = useMemo(() => {
+    const isAsc = isAscendingMetric(activeMetric);
     const list = REGIONS.map((r) => ({
       code: r.code,
       name: r.agency,
       shortCode: r.shortCode,
       val: computeRegionMetric(r.code, activeMetric)
     }));
-    list.sort((a, b) => b.val - a.val);
+    if (isAsc) {
+      list.sort((a, b) => a.val - b.val);
+    } else {
+      list.sort((a, b) => b.val - a.val);
+    }
     const rankMap = new Map<string, { rank: number; total: number; topPct: number; maxVal: number }>();
     const maxVal = list[0]?.val || 1;
     list.forEach((item, idx) => {
@@ -1104,6 +1115,7 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
 
   // Find min, max, and selected province rank using pure computeProvinceMetric
   const { minVal, maxVal, selectedRank } = useMemo(() => {
+    const isAsc = isAscendingMetric(activeMetric);
     let min = Infinity;
     let max = -Infinity;
     const list: { code: string; val: number }[] = [];
@@ -1114,7 +1126,11 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
       if (v > max) max = v;
       list.push({ code: c, val: v });
     }
-    list.sort((a, b) => b.val - a.val);
+    if (isAsc) {
+      list.sort((a, b) => a.val - b.val);
+    } else {
+      list.sort((a, b) => b.val - a.val);
+    }
     const sIdx = list.findIndex((item) => item.code === selectedProvinceCode);
     return { 
       minVal: min === Infinity ? 0 : min, 
@@ -1980,18 +1996,19 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
 
       const isRegion = mapLevelRef.current === 'region';
       const targetCode = isRegion ? (selectedRegionCodeRef.current || 'TR10') : selCode;
+      const isAsc = isAscendingMetric(metric);
 
       const ranked = isRegion
         ? REGIONS.map((r) => ({
             code: r.code,
             name: `${r.shortCode} (${r.provinces.slice(0, 2).join(', ')}${r.provinces.length > 2 ? '..' : ''})`,
             value: computeRegionMetric(r.code, metric)
-          })).sort((a, b) => b.value - a.value)
+          })).sort((a, b) => isAsc ? a.value - b.value : b.value - a.value)
         : Object.keys(PROVINCE_CODES).map((code) => ({
             code,
             name: PROVINCE_CODES[code],
             value: computeProvinceMetric(code, metric)
-          })).sort((a, b) => b.value - a.value);
+          })).sort((a, b) => isAsc ? a.value - b.value : b.value - a.value);
 
       const rankMap = new Map<string, number>();
       ranked.forEach((item, idx) => rankMap.set(item.code, idx + 1));
@@ -2176,6 +2193,7 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
       hoverBeaconGroup.visible = true;
 
       const currentMetric = activeMetricRef.current;
+      const isAsc = isAscendingMetric(currentMetric);
       let rank = 1;
       let name = 'LOKASYON';
       let val = 0;
@@ -2187,14 +2205,14 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
         const ranked = REGIONS.map((r) => ({
           code: r.code,
           val: computeRegionMetric(r.code, currentMetric)
-        })).sort((a, b) => b.val - a.val);
+        })).sort((a, b) => isAsc ? a.val - b.val : b.val - a.val);
         const rankIdx = ranked.findIndex((r) => r.code === code);
         rank = rankIdx !== -1 ? rankIdx + 1 : 1;
       } else {
         const ranked = Object.keys(PROVINCE_CODES).map((c) => ({
           code: c,
           value: computeProvinceMetric(c, currentMetric)
-        })).sort((a, b) => b.value - a.value);
+        })).sort((a, b) => isAsc ? a.value - b.value : b.value - a.value);
         const rankIdx = ranked.findIndex((r) => r.code === code);
         rank = rankIdx !== -1 ? rankIdx + 1 : 1;
         name = PROVINCE_CODES[code] || 'İL';

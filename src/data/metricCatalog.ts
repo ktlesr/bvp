@@ -2,6 +2,7 @@ import { getProvinceExport } from './tradeData';
 import { getProvinceOSB } from './osbData';
 import { getWomenShare } from './womenTradeData';
 import { getProvinceOverview } from './demographyData';
+import { getProvinceSegeRank } from './segeData';
 import { REGIONS, PROVINCE_TO_CODE } from './regions';
 
 export type MapMetricType = 
@@ -125,11 +126,11 @@ export const METRIC_CATALOG: CatalogCategory[] = [
       },
       {
         id: 'ses',
-        label: 'SEGE Gelişmişlik Endeksi',
-        shortLabel: 'SEGE SKORU',
-        desc: 'İllerin Sosyoekonomik Gelişmişlik Sıralaması (SEGE) Skoru',
-        unit: 'Endeks Puanı',
-        badge: 'SEGE Endeksi'
+        label: 'İl SEGE Sıralaması (2025)',
+        shortLabel: 'SEGE SIRASI',
+        desc: 'T.C. Sanayi ve Teknoloji Bakanlığı İl SEGE-2025 Resmi Sıralaması (1: En Gelişmiş İl)',
+        unit: '. Sıra',
+        badge: 'İl SEGE-2025'
       }
     ]
   },
@@ -218,7 +219,7 @@ export function computeProvinceMetric(code: string, metric: MapMetricType): numb
     case 'gdp':
       return dem.gdpPerCapitaUsd;
     case 'ses':
-      return dem.sesScore;
+      return getProvinceSegeRank(code, '2025');
     case 'employment':
       return dem.employmentRate;
     case 'unemployment':
@@ -271,7 +272,16 @@ export function computeRegionMetric(regionCode: string, metric: MapMetricType): 
     weightedSum += val * pop;
   });
 
-  return totalPop > 0 ? weightedSum / totalPop : 0;
+  if (totalPop === 0) return 0;
+  const rawAvg = weightedSum / totalPop;
+
+  if (metric === 'hospital_beds' || metric === 'gdp') {
+    return Math.round(rawAvg);
+  }
+  if (['ses', 'employment', 'unemployment', 'education', 'clean_water', 'waste_service'].includes(metric)) {
+    return Number(rawAvg.toFixed(1));
+  }
+  return rawAvg;
 }
 
 export function getCategoryLabel(metric: MapMetricType): string {
@@ -284,7 +294,7 @@ export function getCategoryLabel(metric: MapMetricType): string {
     case 'osb_active': return 'Aktif OSB';
     case 'population': return 'Toplam Nüfus';
     case 'gdp': return 'GSYH / Kişi';
-    case 'ses': return 'SEGE Skoru';
+    case 'ses': return 'SEGE Sıralaması';
     case 'employment': return 'İstihdam Oranı';
     case 'unemployment': return 'İşsizlik Oranı';
     case 'education': return 'Eğitim Süresi';
@@ -295,29 +305,38 @@ export function getCategoryLabel(metric: MapMetricType): string {
   }
 }
 
+/**
+ * Sıralama tipi göstergelerde (SEGE İl Sıralaması gibi) küçük değer (1. sıra) en iyidir.
+ */
+export function isAscendingMetric(metric: MapMetricType): boolean {
+  return metric === 'ses';
+}
+
 export function formatMetricDisplay(metric: MapMetricType, val: number): string {
+  if (isNaN(val) || val === null || val === undefined) return '0';
   switch (metric) {
     case 'export':
       if (val >= 1e9) return `$${(val / 1e9).toFixed(2)} Milyar`;
       if (val >= 1e6) return `$${(val / 1e6).toFixed(1)} Milyon`;
-      return `$${val.toLocaleString('tr-TR')}`;
+      return `$${Math.round(val).toLocaleString('tr-TR')}`;
     case 'women':
       return `%${val.toFixed(1)} Kadın Payı`;
     case 'osb':
-      return `${val} OSB Bölgesi`;
+      return `${Math.round(val)} OSB`;
     case 'osb_area':
       return `${Math.round(val).toLocaleString('tr-TR')} Hektar`;
     case 'osb_parsel':
-      return `${val.toLocaleString('tr-TR')} Parsel`;
+      return `${Math.round(val).toLocaleString('tr-TR')} Parsel`;
     case 'osb_active':
-      return `${val} Aktif OSB`;
+      return `${Math.round(val)} Aktif OSB`;
     case 'population':
       if (val >= 1e6) return `${(val / 1e6).toFixed(2)}M Kişi`;
-      return `${(val / 1e3).toFixed(0)}K Kişi`;
+      if (val >= 1e3) return `${Math.round(val / 1e3)}K Kişi`;
+      return `${Math.round(val).toLocaleString('tr-TR')} Kişi`;
     case 'gdp':
-      return `$${val.toLocaleString('tr-TR')} GSYH`;
+      return `$${Math.round(val).toLocaleString('tr-TR')} GSYH`;
     case 'ses':
-      return `${val.toFixed(1)} SEGE Skoru`;
+      return typeof val === 'number' && Number.isInteger(val) ? `${val}. Sıra` : `${val.toFixed(1)}. Sıra Ort.`;
     case 'employment':
       return `%${val.toFixed(1)} İstihdam`;
     case 'unemployment':
@@ -325,13 +344,13 @@ export function formatMetricDisplay(metric: MapMetricType, val: number): string 
     case 'education':
       return `${val.toFixed(1)} Yıl Eğitim`;
     case 'hospital_beds':
-      return `${val} Yatak / 100K`;
+      return `${Math.round(val)} Yatak / 100K`;
     case 'clean_water':
       return `%${val.toFixed(1)} Su Erişimi`;
     case 'waste_service':
       return `%${val.toFixed(1)} Atık Hizmeti`;
     default:
-      return String(val);
+      return typeof val === 'number' ? (Number.isInteger(val) ? String(val) : val.toFixed(1)) : String(val);
   }
 }
 
@@ -345,7 +364,7 @@ export function getMetricTitle(metric: MapMetricType): string {
     case 'osb_active': return 'AKTİF OSB LİDERLERİ';
     case 'population': return 'NÜFUS LİDERLERİ';
     case 'gdp': return 'GSYH / KİŞİ LİDERLERİ';
-    case 'ses': return 'SEGE GELİŞMİŞLİK LİDERLERİ';
+    case 'ses': return 'SEGE GELİŞMİŞLİK LİDERLERİ (1. SIRA = EN GELİŞMİŞ)';
     case 'employment': return 'İSTİHDAM ORANI LİDERLERİ';
     case 'unemployment': return 'EN YÜKSEK İŞSİZLİK';
     case 'education': return 'EĞİTİM SÜRESİ LİDERLERİ';
