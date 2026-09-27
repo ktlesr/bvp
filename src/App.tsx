@@ -11,7 +11,7 @@ import {
 import { 
   TurkeyMap3D as TurkeyMap 
 } from './components/TurkeyMap3D';
-import { MapMetricType, getMetricTitle, computeProvinceMetric, computeRegionMetric } from './data/metricCatalog';
+import { MapMetricType, getMetricTitle, computeProvinceMetric, computeRegionMetric, isAscendingMetric } from './data/metricCatalog';
 import { RankingList } from './components/RankingList';
 import { TrendChart } from './components/TrendChart';
 import { CompositionChart } from './components/CompositionChart';
@@ -50,12 +50,13 @@ const KIOSK_STEPS: {
 ];
 
 function getTopLeaderCode(metric: MapMetricType): string {
+  const isAsc = isAscendingMetric(metric);
   let bestCode = '34';
-  let bestVal = -Infinity;
+  let bestVal = isAsc ? Infinity : -Infinity;
   for (let i = 1; i <= 81; i++) {
     const code = String(i);
     const val = computeProvinceMetric(code, metric);
-    if (val > bestVal) {
+    if (isAsc ? val < bestVal : val > bestVal) {
       bestVal = val;
       bestCode = code;
     }
@@ -75,21 +76,30 @@ export default function App() {
   const [kioskProgress, setKioskProgress] = useState<number>(0);
   const [isDossierOpen, setIsDossierOpen] = useState<boolean>(false);
 
+  // Clean metric change handler: resets manual selection to the natural top leader so previous manual city never gets stuck
+  const handleMetricChange = (newMetric: MapMetricType) => {
+    setActiveMetric(newMetric);
+    const leader = getTopLeaderCode(newMetric);
+    setSelectedProvinceCode(leader);
+    const reg = getRegionForProvince(leader);
+    if (reg) setSelectedRegionCode(reg.code);
+  };
+
   // Sync active map metric when dashboard mode changes manually (when not in auto play)
   useEffect(() => {
     if (isAutoPlay) return;
     switch (currentMode) {
       case 'trade':
-        setActiveMetric('export');
+        handleMetricChange('export');
         break;
       case 'osb':
-        setActiveMetric('osb');
+        handleMetricChange('osb');
         break;
       case 'women':
-        setActiveMetric('women');
+        handleMetricChange('women');
         break;
       case 'demography':
-        setActiveMetric('gdp');
+        handleMetricChange('gdp');
         break;
       case 'province':
         setIsDossierOpen(true);
@@ -303,7 +313,8 @@ export default function App() {
               mapLevel={mapLevel}
               onMapLevelChange={setMapLevel}
               activeMetric={activeMetric}
-              onMetricChange={setActiveMetric}
+              onMetricChange={handleMetricChange}
+              onOpenDossier={() => setIsDossierOpen(true)}
               currentMode={currentMode}
               onModeChange={setCurrentMode}
               isAutoPlay={isAutoPlay}

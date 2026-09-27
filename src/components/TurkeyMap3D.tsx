@@ -25,7 +25,12 @@ import {
   HelpCircle,
   X,
   Hand,
-  MapPin
+  MapPin,
+  Plus,
+  Pin,
+  Trash2,
+  FileText,
+  CheckCircle2
 } from 'lucide-react';
 import defaultGeoData from '../data/nuts3.geo.json';
 import nuts2GeoData from '../data/nuts2.geo.json';
@@ -64,6 +69,7 @@ interface TurkeyMap3DProps {
   autoPlayProgress?: number;
   autoPlayStepTitle?: string;
   activeTheme?: ThemeMode;
+  onOpenDossier?: () => void;
 }
 
 // Helper to project lon/lat to 3D world coordinates
@@ -839,7 +845,8 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
   isAutoPlay = false,
   autoPlayProgress = 0,
   autoPlayStepTitle,
-  activeTheme = 'cyber-blue'
+  activeTheme = 'cyber-blue',
+  onOpenDossier
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
 
@@ -987,22 +994,98 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
   const activeThemeRef = useRef<ThemeMode>(activeTheme);
   activeThemeRef.current = activeTheme;
 
+  // Comparison & Multi-Select Pinning State
+  const [comparisonCodes, setComparisonCodes] = useState<string[]>([]);
+  const comparisonCodesRef = useRef<string[]>([]);
+  comparisonCodesRef.current = comparisonCodes;
+
+  // Context Menu & Quick-Add Search Palette State
+  interface ContextMenuData {
+    isOpen: boolean;
+    x: number;
+    y: number;
+    targetCode: string | null;
+    targetName: string | null;
+    isRegion: boolean;
+    metricValue?: number;
+    rank?: number;
+    isPaletteView?: boolean;
+  }
+  const [contextMenu, setContextMenu] = useState<ContextMenuData | null>(null);
+  const [paletteSearch, setPaletteSearch] = useState<string>('');
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+
   // External update handlers
   const updateBaseBeaconsRef = useRef<((metric: MapMetricType, selCode: string) => void) | null>(null);
   const updateHoverBeaconRef = useRef<((code: string | null) => void) | null>(null);
   const updateProvincesVisualRef = useRef<(() => void) | null>(null);
 
+  // Toggle or add a location to comparison pins
+  const toggleComparisonCode = (code: string) => {
+    setComparisonCodes((prev) => {
+      const next = prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code];
+      comparisonCodesRef.current = next;
+      if (updateBaseBeaconsRef.current) {
+        updateBaseBeaconsRef.current(activeMetricRef.current, code);
+      }
+      if (updateProvincesVisualRef.current) {
+        updateProvincesVisualRef.current();
+      }
+      return next;
+    });
+  };
+
+  // Reset comparison pins to return to natural top 5 leaders
+  const clearAllComparisons = () => {
+    setComparisonCodes([]);
+    comparisonCodesRef.current = [];
+    selectedMeshCodeRef.current = '';
+    if (updateBaseBeaconsRef.current) {
+      updateBaseBeaconsRef.current(activeMetricRef.current, '');
+    }
+    if (updateProvincesVisualRef.current) {
+      updateProvincesVisualRef.current();
+    }
+  };
+
+  // Camera glide focus to specific province/region coordinates
+  const focusOnLocation = (code: string) => {
+    if (!cameraRef.current || !controlsRef.current) return;
+    const isRegion = mapLevelRef.current === 'region';
+    const centroidsMap = isRegion ? REGION_CENTROIDS : PROVINCE_CENTROIDS;
+    const pt = centroidsMap[code];
+    if (!pt) return;
+    const [wx, wz] = lonLatToWorld(pt[0], pt[1]);
+
+    const targetLook = new THREE.Vector3(wx, 0, wz);
+    const targetCam = new THREE.Vector3(wx, 20, wz + 24);
+
+    let frame = 0;
+    const stepFocus = () => {
+      if (!cameraRef.current || !controlsRef.current || frame > 35) return;
+      cameraRef.current.position.lerp(targetCam, 0.12);
+      controlsRef.current.target.lerp(targetLook, 0.12);
+      frame++;
+      requestAnimationFrame(stepFocus);
+    };
+    stepFocus();
+  };
+
   // Handler for Level change (81 İl vs 26 İBBS-2 Bölge)
   const handleMapLevelChange = (newLevel: 'province' | 'region') => {
     setInternalMapLevel(newLevel);
     mapLevelRef.current = newLevel;
+    // Clear comparison codes when switching level
+    setComparisonCodes([]);
+    comparisonCodesRef.current = [];
+    selectedMeshCodeRef.current = '';
+    setContextMenu(null);
 
     if (provinceGroupRef.current && regionGroupRef.current) {
       provinceGroupRef.current.visible = newLevel === 'province';
       regionGroupRef.current.visible = newLevel === 'region';
     }
     if (provinceBordersGroupRef.current && regionBordersGroupRef.current) {
-      // Province sub-boundaries stay visible in both modes, regional borders visible in 26-region mode
       provinceBordersGroupRef.current.visible = true;
       regionBordersGroupRef.current.visible = newLevel === 'region';
     }
@@ -1013,7 +1096,7 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
     if (updateBaseBeaconsRef.current) {
       updateBaseBeaconsRef.current(
         activeMetricRef.current,
-        newLevel === 'region' ? selectedRegionCodeRef.current : selectedMeshCodeRef.current
+        newLevel === 'region' ? selectedRegionCodeRef.current : ''
       );
     }
   };
@@ -1056,16 +1139,42 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
     }
   }, [selectedProvinceCode]);
 
-  // Sync activeMetric
+  // Sync activeMetric, autoPlay and level: Automatic Reset of comparison codes and manual selection on change!
   useEffect(() => {
     activeMetricRef.current = activeMetric;
+    setComparisonCodes([]);
+    comparisonCodesRef.current = [];
+    selectedMeshCodeRef.current = '';
+    setContextMenu(null);
     if (updateBaseBeaconsRef.current) {
-      updateBaseBeaconsRef.current(
-        activeMetric,
-        mapLevelRef.current === 'region' ? selectedRegionCodeRef.current : selectedMeshCodeRef.current
-      );
+      updateBaseBeaconsRef.current(activeMetric, '');
     }
-  }, [activeMetric]);
+    if (updateProvincesVisualRef.current) {
+      updateProvincesVisualRef.current();
+    }
+  }, [activeMetric, isAutoPlay, autoPlayStepTitle, mapLevel]);
+
+  // Close context menu and palette when clicking outside or pressing Escape
+  useEffect(() => {
+    const handleContextClickOutside = (event: MouseEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(event.target as Node)) {
+        setContextMenu(null);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setContextMenu(null);
+      }
+    };
+    if (contextMenu?.isOpen) {
+      document.addEventListener('mousedown', handleContextClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleContextClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [contextMenu?.isOpen]);
 
   // Close popover when clicking outside
   useEffect(() => {
@@ -1106,12 +1215,21 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
       controlsRef.current.autoRotate = !!isAutoPlay;
       controlsRef.current.autoRotateSpeed = 0.5;
     }
+    if (isAutoPlay) {
+      setComparisonCodes([]);
+      comparisonCodesRef.current = [];
+      selectedMeshCodeRef.current = '';
+      setContextMenu(null);
+      if (updateBaseBeaconsRef.current) {
+        updateBaseBeaconsRef.current(activeMetricRef.current, '');
+      }
+    }
     // When paused, smoothly return camera back to default front-facing perspective
     if (prevAutoPlayRef.current && !isAutoPlay) {
       isResettingRef.current = true;
     }
     prevAutoPlayRef.current = isAutoPlay;
-  }, [isAutoPlay]);
+  }, [isAutoPlay, autoPlayStepTitle]);
 
   // Find min, max, and selected province rank using pure computeProvinceMetric
   const { minVal, maxVal, selectedRank } = useMemo(() => {
@@ -2013,7 +2131,7 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
       const rankMap = new Map<string, number>();
       ranked.forEach((item, idx) => rankMap.set(item.code, idx + 1));
 
-      // Determine targets for this metric: Top 5 leaders + Selected
+      // Determine targets for this metric: Natural Top 5 leaders + User-Pinned Comparison Locations
       const targetMap = new Map<string, {
         code: string;
         name: string;
@@ -2022,26 +2140,30 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
         role: 'gold' | 'cyan' | 'blue';
       }>();
 
+      // Top 5 natural leaders of this metric
       ranked.slice(0, 5).forEach((item) => {
         const rank = rankMap.get(item.code) || 1;
-        const isSel = item.code === targetCode;
+        const isComp = comparisonCodesRef.current.includes(item.code);
         targetMap.set(item.code, {
           ...item,
           rank,
-          role: isSel ? 'gold' : rank === 1 ? 'cyan' : 'blue'
+          role: isComp ? 'gold' : rank === 1 ? 'cyan' : 'blue'
         });
       });
 
-      if (targetCode && !targetMap.has(targetCode)) {
-        const sItem = ranked.find((r) => r.code === targetCode);
-        if (sItem) {
-          targetMap.set(targetCode, {
-            ...sItem,
-            rank: rankMap.get(targetCode) || 1,
-            role: 'gold'
-          });
+      // Extra user-pinned comparison locations (outside top 5)
+      comparisonCodesRef.current.forEach((compCode) => {
+        if (!targetMap.has(compCode)) {
+          const sItem = ranked.find((r) => r.code === compCode);
+          if (sItem) {
+            targetMap.set(compCode, {
+              ...sItem,
+              rank: rankMap.get(compCode) || 1,
+              role: 'gold'
+            });
+          }
         }
-      }
+      });
 
       // Calculate staggered adaptive base heights for any neighboring clusters
       const targetList = Array.from(targetMap.values());
@@ -2240,7 +2362,7 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
 
       // 1. Province Meshes Emissive
       provinceMeshesMap.forEach((meshes, code) => {
-        const isSelected = !isRegion && code === selCode;
+        const isSelected = !isRegion && (code === selCode || comparisonCodesRef.current.includes(code));
 
         meshes.forEach((mesh) => {
           const mat = mesh.userData?.topMat as THREE.MeshStandardMaterial | undefined;
@@ -2262,7 +2384,7 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
 
       // 2. Province Borders: Subtle sub-boundaries in 26-region mode; bright & highlighted in 81-province mode
       provinceBordersMap.forEach((entries, code) => {
-        const isSelected = !isRegion && code === selCode;
+        const isSelected = !isRegion && (code === selCode || comparisonCodesRef.current.includes(code));
         entries.forEach(({ line, material }) => {
           if (isRegion) {
             // Keep province borders very subtle so the 26 Düzey-2 Regional boundaries are the dominant visual borders
@@ -2289,7 +2411,7 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
 
       // 3. Region Meshes Emissive
       regionMeshesMap.forEach((meshes, code) => {
-        const isSelected = isRegion && code === selRegCode;
+        const isSelected = isRegion && (code === selRegCode || comparisonCodesRef.current.includes(code));
 
         meshes.forEach((mesh) => {
           const mat = mesh.userData?.topMat as THREE.MeshStandardMaterial | undefined;
@@ -2311,7 +2433,7 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
 
       // 4. Region Borders: Bold Regional Boundary Lines with Glowing Gold Highlight on Selected Region
       regionBordersMap.forEach((entries, code) => {
-        const isSelected = isRegion && code === selRegCode;
+        const isSelected = isRegion && (code === selRegCode || comparisonCodesRef.current.includes(code));
         entries.forEach(({ line, material }) => {
           if (isSelected) {
             // Active Selected Region: High-visibility Glowing Gold-Amber Border
@@ -2546,7 +2668,15 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
       }
     };
 
+    let rightMouseDownPos = { x: 0, y: 0 };
+    const onMouseDown = (event: MouseEvent) => {
+      if (event.button === 2) {
+        rightMouseDownPos = { x: event.clientX, y: event.clientY };
+      }
+    };
+
     const onClick = (event: MouseEvent) => {
+      setContextMenu(null);
       raycaster.setFromCamera(mouse, camera);
       const isRegion = mapLevelRef.current === 'region';
       const activeGroup = isRegion ? regionGroup : provinceGroup;
@@ -2563,19 +2693,115 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
             const pCode = PROVINCE_TO_CODE[reg.provinces[0]];
             if (pCode) onSelectProvince(pCode);
           }
-          updateProvincesVisual();
-          updateBaseBeacons(activeMetricRef.current, code);
+          if (event.shiftKey) {
+            toggleComparisonCode(code);
+          } else {
+            if (updateProvincesVisualRef.current) updateProvincesVisualRef.current();
+          }
         } else {
           onSelectProvince(code);
           selectedMeshCodeRef.current = code;
-          updateProvincesVisual();
-          updateBaseBeacons(activeMetricRef.current, code);
+          if (event.shiftKey) {
+            toggleComparisonCode(code);
+          } else {
+            if (updateProvincesVisualRef.current) updateProvincesVisualRef.current();
+          }
         }
       }
     };
 
+    const onContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+      // If user was right-drag panning the map, ignore context menu
+      const dist = Math.hypot(event.clientX - rightMouseDownPos.x, event.clientY - rightMouseDownPos.y);
+      if (dist > 8) return;
+
+      const rect = renderer.domElement.getBoundingClientRect();
+      const mouseX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      const mouseY = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+      const ctxRaycaster = new THREE.Raycaster();
+      ctxRaycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), camera);
+
+      const isRegion = mapLevelRef.current === 'region';
+      const activeGroup = isRegion ? regionGroup : provinceGroup;
+      const intersects = ctxRaycaster.intersectObjects(activeGroup.children);
+      const hitMesh = intersects.find((hit) => hit.object.userData?.code)?.object as THREE.Mesh | undefined;
+
+      // Also check if user right-clicked directly on a 3D beacon/billboard
+      let beaconHitCode: string | undefined;
+      if (!hitMesh) {
+        const beaconHits = ctxRaycaster.intersectObjects(baseBeaconsGroup.children, true);
+        const beaconObj = beaconHits.find((h) => {
+          let curr: THREE.Object3D | null = h.object;
+          while (curr && curr !== baseBeaconsGroup) {
+            if (curr.userData?.code) return true;
+            curr = curr.parent;
+          }
+          return false;
+        });
+        if (beaconObj) {
+          let curr: THREE.Object3D | null = beaconObj.object;
+          while (curr && curr !== baseBeaconsGroup) {
+            if (curr.userData?.code) {
+              beaconHitCode = curr.userData.code;
+              break;
+            }
+            curr = curr.parent;
+          }
+        }
+      }
+
+      const currentMetric = activeMetricRef.current;
+      const isAsc = isAscendingMetric(currentMetric);
+      const targetCode = hitMesh?.userData?.code || beaconHitCode;
+
+      if (targetCode) {
+        const code = targetCode;
+        const name = isRegion 
+          ? (getRegionByCode(code)?.shortCode || code) 
+          : (PROVINCE_CODES[code] || hitMesh?.userData?.name || 'İL');
+        const val = isRegion 
+          ? computeRegionMetric(code, currentMetric)
+          : computeProvinceMetric(code, currentMetric);
+
+        const ranked = isRegion
+          ? REGIONS.map((r) => ({ code: r.code, v: computeRegionMetric(r.code, currentMetric) }))
+              .sort((a,b) => isAsc ? a.v - b.v : b.v - a.v)
+          : Object.keys(PROVINCE_CODES).map((c) => ({ code: c, v: computeProvinceMetric(c, currentMetric) }))
+              .sort((a,b) => isAsc ? a.v - b.v : b.v - a.v);
+        const rIdx = ranked.findIndex((r) => r.code === code);
+        const rank = rIdx !== -1 ? rIdx + 1 : 1;
+
+        setContextMenu({
+          isOpen: true,
+          x: Math.min(window.innerWidth - 300, Math.max(16, event.clientX)),
+          y: Math.min(window.innerHeight - 340, Math.max(16, event.clientY)),
+          targetCode: code,
+          targetName: name,
+          isRegion,
+          metricValue: val,
+          rank,
+          isPaletteView: false
+        });
+      } else {
+        // Right clicked on background canvas -> Open quick add palette
+        setContextMenu({
+          isOpen: true,
+          x: Math.min(window.innerWidth - 380, Math.max(16, event.clientX)),
+          y: Math.min(window.innerHeight - 480, Math.max(16, event.clientY)),
+          targetCode: null,
+          targetName: null,
+          isRegion,
+          isPaletteView: true
+        });
+      }
+    };
+
     renderer.domElement.addEventListener('mousemove', onPointerMove);
+    renderer.domElement.addEventListener('mousedown', onMouseDown);
     renderer.domElement.addEventListener('click', onClick);
+    renderer.domElement.addEventListener('contextmenu', onContextMenu);
 
     // 10. Animation Loop with Real-Time Screen-Space Collision Avoidance
     let animId: number;
@@ -2747,7 +2973,9 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('export-map-png', handleExportEvent);
       renderer.domElement.removeEventListener('mousemove', onPointerMove);
+      renderer.domElement.removeEventListener('mousedown', onMouseDown);
       renderer.domElement.removeEventListener('click', onClick);
+      renderer.domElement.removeEventListener('contextmenu', onContextMenu);
       if (container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
       }
@@ -3321,6 +3549,79 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
       </div>
     </div>
 
+      {/* 3D Comparison HUD Bar: Shows Natural Top 5 + Any Manually Added Comparison Cities */}
+      <div className="absolute top-14 sm:top-15 left-2 sm:left-3.5 z-20 pointer-events-auto flex flex-wrap items-center gap-1.5 bg-[#051126]/90 backdrop-blur-md px-2.5 py-1 rounded-xs border border-cyan-500/35 shadow-[0_4px_16px_rgba(0,0,0,0.6)] text-xs font-['Rajdhani'] max-w-[calc(100vw-32px)]">
+        <div className="flex items-center gap-1 text-amber-300 font-bold uppercase tracking-wider text-[11px]">
+          <Award className="w-3.5 h-3.5 text-amber-400" />
+          <span>3B KIYASLAMA:</span>
+        </div>
+        
+        {/* Natural Top 5 Pill */}
+        <span className="px-2 py-0.5 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 text-[10px] font-mono font-bold flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+          ZİRVE 5 {mapLevel === 'region' ? 'BÖLGE' : 'İL'}
+        </span>
+
+        {/* Manually Pinned Cities Badges */}
+        {comparisonCodes.map((code) => {
+          const name = mapLevel === 'region' 
+            ? (getRegionByCode(code)?.shortCode || code) 
+            : (PROVINCE_CODES[code] || code);
+          return (
+            <span 
+              key={code}
+              className="flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/20 text-amber-200 border border-amber-400/50 text-[11px] font-bold font-mono shadow-[0_0_10px_rgba(245,158,11,0.25)] animate-in fade-in zoom-in-95 duration-150"
+            >
+              <Pin className="w-2.5 h-2.5 text-amber-400" />
+              <span>{name}</span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleComparisonCode(code);
+                }}
+                className="ml-0.5 text-amber-400 hover:text-rose-400 p-0.5 transition-colors"
+                title="Kıyaslamadan Kaldır"
+              >
+                <X className="w-2.5 h-2.5" />
+              </button>
+            </span>
+          );
+        })}
+
+        {/* Add City Button (also mentions Right-Click) */}
+        <button
+          onClick={() => {
+            setContextMenu({
+              isOpen: true,
+              x: Math.min(window.innerWidth - 380, Math.max(16, 24)),
+              y: 80,
+              targetCode: null,
+              targetName: null,
+              isRegion: mapLevel === 'region',
+              isPaletteView: true
+            });
+          }}
+          className="flex items-center gap-1 px-2 py-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500/35 text-cyan-300 hover:text-white border border-cyan-500/40 text-[11px] font-bold transition-all shadow-[0_0_8px_rgba(0,242,254,0.15)]"
+          title="Haritada sağ tıklayarak veya buradan yeni il/bölge ekleyebilirsiniz"
+        >
+          <Plus className="w-3 h-3 text-cyan-400" />
+          <span>{mapLevel === 'region' ? 'Bölge Ekle' : 'İl Ekle'}</span>
+          <span className="text-[9px] text-cyan-400/70 font-mono hidden sm:inline">(Sağ Tık)</span>
+        </button>
+
+        {/* Reset to Natural Top 5 Button */}
+        {comparisonCodes.length > 0 && (
+          <button
+            onClick={clearAllComparisons}
+            className="flex items-center gap-1 px-2 py-0.5 rounded bg-rose-950/70 hover:bg-rose-900/80 text-rose-300 hover:text-rose-100 border border-rose-500/40 text-[10px] font-bold font-mono transition-all ml-1"
+            title="Eklenen tüm illeri temizle ve sadece doğal ilk 5 lideri göster"
+          >
+            <RotateCcw className="w-2.5 h-2.5" />
+            <span>İlk 5'e Sıfırla</span>
+          </button>
+        )}
+      </div>
+
       {/* Floating Hover Info Card with Maximum Vibrancy and High Contrast */}
       {hoveredInfo && (() => {
         const cardWidth = hoveredInfo.isRegion ? 320 : 280;
@@ -3407,6 +3708,339 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
         );
       })()}
 
+      {/* 3D Canvas Right-Click Context Menu & Quick-Add Search Palette */}
+      {contextMenu && contextMenu.isOpen && (
+        <div
+          ref={contextMenuRef}
+          className={`fixed z-50 text-white font-['Rajdhani'] select-none animate-in fade-in zoom-in-95 duration-150 ${
+            contextMenu.isPaletteView
+              ? 'w-80 sm:w-96 max-h-[520px] rounded-xs bg-[#051126]/98 backdrop-blur-2xl border border-cyan-400/80 shadow-[0_12px_50px_rgba(0,0,0,0.9),0_0_25px_rgba(0,242,254,0.35)] flex flex-col overflow-hidden'
+              : 'w-64 sm:w-72 rounded-xs bg-[#051126]/98 backdrop-blur-2xl border border-cyan-400/80 shadow-[0_10px_40px_rgba(0,0,0,0.85),0_0_20px_rgba(0,242,254,0.3)] p-2.5 flex flex-col gap-2'
+          }`}
+          style={{
+            left: `${contextMenu.x}px`,
+            top: `${contextMenu.y}px`
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Cyber corner accents */}
+          <span className="absolute -top-0.5 -left-0.5 w-2 h-2 border-t-2 border-l-2 border-cyan-400" />
+          <span className="absolute -top-0.5 -right-0.5 w-2 h-2 border-t-2 border-r-2 border-cyan-400" />
+          <span className="absolute -bottom-0.5 -left-0.5 w-2 h-2 border-b-2 border-l-2 border-cyan-400" />
+          <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 border-b-2 border-r-2 border-cyan-400" />
+
+          {/* VIEW A: City/Region Context Menu (When Right-Clicked on an item) */}
+          {!contextMenu.isPaletteView && contextMenu.targetCode && (() => {
+            const code = contextMenu.targetCode;
+            const isReg = contextMenu.isRegion;
+            const isPinned = comparisonCodes.includes(code);
+            const val = contextMenu.metricValue ?? (isReg ? computeRegionMetric(code, activeMetric) : computeProvinceMetric(code, activeMetric));
+            const rank = contextMenu.rank ?? 1;
+
+            return (
+              <>
+                {/* Header with Title & Rank */}
+                <div className="flex items-center justify-between pb-2 border-b border-cyan-500/30">
+                  <div className="flex items-center gap-2">
+                    <span className="px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-500/40 text-[11px] font-mono font-bold">
+                      #{code}
+                    </span>
+                    <div>
+                      <div className="font-['Orbitron'] font-bold text-sm text-white tracking-wide">
+                        {contextMenu.targetName?.toUpperCase()}
+                      </div>
+                      <div className="text-[10px] text-cyan-300 font-mono">
+                        {getCategoryLabel(activeMetric)}: <strong className="text-amber-300">{formatMetricDisplay(activeMetric, val)}</strong>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setContextMenu(null)}
+                    className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {/* Rank Badge */}
+                <div className="flex items-center justify-between text-[11px] font-mono px-2 py-1 rounded bg-[#030919] border border-cyan-500/20">
+                  <span className="text-slate-400">Ulusal Sıralama:</span>
+                  <span className="font-bold text-amber-300">
+                    {rank <= 5 ? `★ ${rank}. Sıra (Zirve 5)` : `${rank}. Sıra`}
+                  </span>
+                </div>
+
+                {/* Actions List */}
+                <div className="flex flex-col gap-1 pt-1">
+                  {/* Action 1: Toggle Comparison */}
+                  <button
+                    onClick={() => {
+                      toggleComparisonCode(code);
+                      setContextMenu(null);
+                    }}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-xs text-xs font-bold transition-all text-left ${
+                      isPinned
+                        ? 'bg-rose-950/70 hover:bg-rose-900 border border-rose-500/50 text-rose-200'
+                        : 'bg-gradient-to-r from-amber-500/30 to-amber-600/30 hover:from-amber-500/50 hover:to-amber-600/50 border border-amber-400/60 text-amber-200 hover:text-white shadow-[0_0_12px_rgba(245,158,11,0.25)]'
+                    }`}
+                  >
+                    {isPinned ? (
+                      <>
+                        <Trash2 className="w-4 h-4 text-rose-400 shrink-0" />
+                        <div>
+                          <div>Kıyaslamadan Kaldır</div>
+                          <div className="text-[9px] font-normal opacity-80">3B haritadaki sütunu gizle</div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4 text-amber-400 shrink-0" />
+                        <div>
+                          <div>Kıyaslamaya Ekle (3B Sütun)</div>
+                          <div className="text-[9px] font-normal opacity-80">İlk 5 liderin yanına ekler</div>
+                        </div>
+                      </>
+                    )}
+                  </button>
+
+                  {/* Action 2: Inspect only this city */}
+                  <button
+                    onClick={() => {
+                      if (isReg) {
+                        if (onSelectRegion) onSelectRegion(code);
+                        const reg = getRegionByCode(code);
+                        if (reg && reg.provinces[0]) {
+                          const pCode = PROVINCE_TO_CODE[reg.provinces[0]];
+                          if (pCode) onSelectProvince(pCode);
+                        }
+                      } else {
+                        onSelectProvince(code);
+                      }
+                      setContextMenu(null);
+                    }}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xs bg-cyan-950/50 hover:bg-cyan-900/60 border border-cyan-500/30 text-cyan-200 hover:text-white text-xs font-bold transition-all text-left"
+                  >
+                    <Crosshair className="w-4 h-4 text-cyan-400 shrink-0" />
+                    <div>
+                      <div>Yalnızca Bu {isReg ? 'Bölgeyi' : 'İli'} İncele</div>
+                      <div className="text-[9px] font-normal text-slate-400">Panelleri ve grafikleri odakla</div>
+                    </div>
+                  </button>
+
+                  {/* Action 3: Open Dossier Modal */}
+                  <button
+                    onClick={() => {
+                      if (isReg) {
+                        if (onSelectRegion) onSelectRegion(code);
+                        const reg = getRegionByCode(code);
+                        if (reg && reg.provinces[0]) {
+                          const pCode = PROVINCE_TO_CODE[reg.provinces[0]];
+                          if (pCode) onSelectProvince(pCode);
+                        }
+                      } else {
+                        onSelectProvince(code);
+                      }
+                      if (onOpenDossier) onOpenDossier();
+                      setContextMenu(null);
+                    }}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xs bg-[#081a38]/80 hover:bg-[#0a234d] border border-cyan-500/30 text-slate-200 hover:text-white text-xs font-bold transition-all text-left"
+                  >
+                    <FileText className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <div>
+                      <div>Detaylı {isReg ? 'Bölge' : 'İl'} Karnesini Aç</div>
+                      <div className="text-[9px] font-normal text-slate-400">Tüm sosyo-ekonomik göstergeler</div>
+                    </div>
+                  </button>
+
+                  {/* Action 4: Switch to Palette View */}
+                  <button
+                    onClick={() => {
+                      setContextMenu((prev) => prev ? { ...prev, isPaletteView: true } : null);
+                    }}
+                    className="flex items-center justify-between px-3 py-1.5 rounded-xs bg-[#030919]/60 hover:bg-[#06142e] text-[11px] text-cyan-300 hover:text-white font-mono transition-colors mt-0.5 border border-cyan-500/20"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Search className="w-3 h-3 text-cyan-400" />
+                      Başka İl / Bölge Ekle...
+                    </span>
+                    <span className="text-[9px] opacity-60">Ara &gt;</span>
+                  </button>
+                </div>
+              </>
+            );
+          })()}
+
+          {/* VIEW B: Quick-Add Search Palette (When Right-Clicked on background or clicked "İl Ekle") */}
+          {contextMenu.isPaletteView && (() => {
+            const isReg = mapLevelRef.current === 'region';
+            const currentMetric = activeMetricRef.current;
+            const isAsc = isAscendingMetric(currentMetric);
+
+            // Compute ranking list
+            const fullList = isReg
+              ? REGIONS.map((r) => ({
+                  code: r.code,
+                  name: `${r.shortCode} (${r.level1Name})`,
+                  val: computeRegionMetric(r.code, currentMetric)
+                })).sort((a, b) => isAsc ? a.val - b.val : b.val - a.val)
+              : Object.keys(PROVINCE_CODES).map((c) => ({
+                  code: c,
+                  name: PROVINCE_CODES[c],
+                  val: computeProvinceMetric(c, currentMetric)
+                })).sort((a, b) => isAsc ? a.val - b.val : b.val - a.val);
+
+            const top5Codes = new Set(fullList.slice(0, 5).map((x) => x.code));
+
+            const filtered = fullList.filter((item) => {
+              if (!paletteSearch.trim()) return true;
+              const q = paletteSearch.toLowerCase();
+              return item.name.toLowerCase().includes(q) || item.code.toLowerCase().includes(q);
+            });
+
+            return (
+              <>
+                {/* Palette Header */}
+                <div className="p-3 border-b border-cyan-500/30 bg-[#091b38]/90">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300">
+                        <Pin className="w-3.5 h-3.5" />
+                      </div>
+                      <div>
+                        <div className="font-['Orbitron'] font-bold text-xs sm:text-sm text-transparent bg-clip-text bg-gradient-to-r from-white via-cyan-100 to-amber-300 uppercase">
+                          {isReg ? 'BÖLGE EKLE & KIYASLA' : 'İL EKLE & KIYASLA'}
+                        </div>
+                        <div className="text-[10px] text-slate-300 font-mono">
+                          {getCategoryLabel(currentMetric)} · Zirve 5 Lider + Elle Seçilenler
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setContextMenu(null)}
+                      className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Search Bar */}
+                  <div className="relative mt-2">
+                    <Search className="w-3.5 h-3.5 text-cyan-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      autoFocus
+                      placeholder={isReg ? "Bölge adı veya kodu ara..." : "İl ara (örn: Bursa, Konya, Gaziantep...)"}
+                      value={paletteSearch}
+                      onChange={(e) => setPaletteSearch(e.target.value)}
+                      className="w-full bg-[#030919] border border-cyan-500/40 rounded-xs pl-8 pr-3 py-1.5 text-xs text-white placeholder:text-slate-400 focus:outline-none focus:border-amber-400 font-mono"
+                    />
+                  </div>
+                </div>
+
+                {/* Items List */}
+                <div className="flex-1 overflow-y-auto p-2 space-y-1 max-h-[300px] custom-scrollbar">
+                  {filtered.map((item) => {
+                    const isTop5 = top5Codes.has(item.code);
+                    const isPinned = comparisonCodes.includes(item.code);
+                    const rank = fullList.findIndex((x) => x.code === item.code) + 1;
+
+                    return (
+                      <div
+                        key={item.code}
+                        className={`flex items-center justify-between gap-2 p-2 rounded-xs transition-colors border ${
+                          isPinned
+                            ? 'bg-amber-500/20 border-amber-400/60 shadow-[0_0_10px_rgba(245,158,11,0.2)]'
+                            : isTop5
+                            ? 'bg-cyan-950/60 border-cyan-500/40'
+                            : 'bg-[#040e24]/60 border-cyan-500/10 hover:bg-[#071938] hover:border-cyan-500/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold shrink-0 ${
+                            isTop5 ? 'bg-amber-400 text-slate-950' : 'bg-cyan-950 text-cyan-300 border border-cyan-500/30'
+                          }`}>
+                            #{rank}
+                          </span>
+                          <div className="truncate">
+                            <div className="font-bold text-xs text-white truncate">
+                              {item.name}
+                            </div>
+                            <div className="text-[10px] text-cyan-300/80 font-mono">
+                              {formatMetricDisplay(currentMetric, item.val)}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Action buttons */}
+                        <div className="shrink-0 flex items-center gap-1.5">
+                          {isTop5 ? (
+                            <span className="px-2 py-0.5 rounded bg-cyan-950/90 text-cyan-300 border border-cyan-500/40 text-[9px] font-mono font-bold">
+                              ZİRVE 5
+                            </span>
+                          ) : isPinned ? (
+                            <button
+                              onClick={() => toggleComparisonCode(item.code)}
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-xs bg-rose-950/80 hover:bg-rose-900 text-rose-200 border border-rose-500/50 text-[11px] font-bold font-mono transition-colors"
+                              title="Kıyaslamadan Çıkar"
+                            >
+                              <X className="w-3 h-3 text-rose-400" />
+                              <span>ÇIKAR</span>
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => toggleComparisonCode(item.code)}
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-xs bg-amber-500/20 hover:bg-amber-500/40 text-amber-300 hover:text-white border border-amber-500/40 text-[11px] font-bold font-mono transition-colors shadow-[0_0_8px_rgba(245,158,11,0.2)]"
+                              title="3B Sütun Olarak Kıyaslamaya Ekle"
+                            >
+                              <Plus className="w-3 h-3" />
+                              <span>EKLE</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {filtered.length === 0 && (
+                    <div className="py-6 text-center text-xs text-slate-400 font-mono">
+                      "{paletteSearch}" ile eşleşen konum bulunamadı.
+                    </div>
+                  )}
+                </div>
+
+                {/* Palette Footer */}
+                <div className="p-2.5 border-t border-cyan-500/30 bg-[#061226] flex items-center justify-between text-xs font-mono">
+                  <div className="text-slate-300 text-[11px]">
+                    Kıyaslanan: <strong className="text-cyan-300">5 Doğal</strong>
+                    {comparisonCodes.length > 0 && (
+                      <span className="text-amber-300 font-bold ml-1">
+                        + {comparisonCodes.length} Eklenen
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {comparisonCodes.length > 0 && (
+                      <button
+                        onClick={clearAllComparisons}
+                        className="text-[10px] text-rose-400 hover:text-rose-300 underline font-bold"
+                      >
+                        İlk 5'e Sıfırla
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setContextMenu(null)}
+                      className="px-3 py-1 rounded-xs bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold font-['Rajdhani'] text-xs transition-colors"
+                    >
+                      Tamam
+                    </button>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
+        </div>
+      )}
+
       {/* 3D Canvas Navigation & Mouse Controls Guide Bar (Bottom-Left) */}
       <div className="absolute bottom-3 left-4 z-20 flex flex-col gap-1 select-none pointer-events-auto">
         {isControlsCollapsed ? (
@@ -3458,9 +4092,9 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
               {/* Sağ Tuş */}
               <div className="flex items-center gap-1.5 px-2 py-1 rounded-xs bg-[#081a38]/85 border border-amber-500/30">
                 <span className="px-1.5 py-0.2 rounded bg-amber-500/25 text-amber-300 font-mono text-[9px] font-bold border border-amber-500/40">
-                  SAĞ TUŞ + SÜRÜKLE
+                  SAĞ TIK
                 </span>
-                <span className="text-slate-200 font-semibold text-amber-100">Haritayı Taşı / Kaydır (Pan)</span>
+                <span className="text-slate-200 font-semibold text-amber-100">İl Ekle / Menü (Sürükle: Taşı)</span>
               </div>
 
               {/* Tekerlek */}
@@ -3573,13 +4207,13 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-bold text-amber-200 text-xs">SAĞ TUŞ + SÜRÜKLE</span>
+                      <span className="font-bold text-amber-200 text-xs">SAĞ TIK & SÜRÜKLE</span>
                       <span className="px-1.5 py-0.2 rounded bg-amber-950 text-amber-300 border border-amber-500/40 text-[9px] font-mono font-bold">
-                        TAŞI / KAYDIR (PAN)
+                        İL EKLE & TAŞI (PAN)
                       </span>
                     </div>
                     <p className="text-slate-300 text-[11px] leading-relaxed mt-0.5">
-                      Fare sağ tuşuna basılı tutarak sürükleyin. Haritayı ekran üzerinde sağa, sola, yukarı ve aşağı taşıyabilirsiniz.
+                      <strong>Sağ Tık:</strong> Haritada boş bir alana veya bir ile sağ tıklayarak <em>İl/Bölge Ekle & Kıyasla</em> menüsünü açın; ilk 5 liderin yanına istediğiniz illeri ekleyin. <strong>Sağ Tuş Sürükle:</strong> Haritayı ekran üzerinde sağa, sola, yukarı ve aşağı kaydırın.
                     </p>
                   </div>
                 </div>
