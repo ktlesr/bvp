@@ -2816,11 +2816,14 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
       {/* 3D Canvas Mount */}
       <div ref={mountRef} className="w-full h-full flex-1 cursor-grab active:cursor-grabbing relative" />
 
-      {/* Top Left: Domain Categories with Dropdown Indicators */}
-      <div 
-        ref={categoryNavRef}
-        className="absolute top-3 left-4 z-20 flex flex-wrap items-center gap-1.5 bg-[#0b172a]/95 backdrop-blur-md p-1.5 rounded border border-cyan-500/50 shadow-[0_0_20px_rgba(0,242,254,0.18)]"
-      >
+      {/* Top Floating Controls Bar (Unified Responsive Non-Colliding Layout) */}
+      <div className="absolute top-2 sm:top-3 left-2 sm:left-3.5 right-2 sm:right-3.5 z-20 flex flex-wrap items-center justify-between gap-1.5 sm:gap-2 pointer-events-none">
+        
+        {/* Left Side: Domain Categories with Dropdown Indicators */}
+        <div 
+          ref={categoryNavRef}
+          className="flex flex-wrap items-center gap-1 sm:gap-1.5 bg-[#0b172a]/95 backdrop-blur-md p-1 sm:p-1.5 rounded-xs border border-cyan-500/50 shadow-[0_0_20px_rgba(0,242,254,0.18)] pointer-events-auto max-w-full"
+        >
         {CANVAS_THEMES.map((cat) => {
           const isCatActive = 
             currentMode === cat.id || 
@@ -2849,8 +2852,11 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
                 title={`${cat.label} göstergelerini listele ve haritada göster`}
               >
                 {cat.icon}
-                <span>{cat.label}</span>
-                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isOpen ? 'rotate-180 text-slate-950' : 'text-cyan-400'}`} />
+                <span className="hidden xl:inline">{cat.label}</span>
+                <span className="inline xl:hidden text-[11px] font-bold">
+                  {cat.id === 'trade' ? 'TİCARET' : cat.id === 'osb' ? 'OSB' : cat.id === 'women' ? 'KADIN' : 'DEMOGRAFİ'}
+                </span>
+                <ChevronDown className={`w-3 h-3 sm:w-3.5 sm:h-3.5 transition-transform duration-200 ${isOpen ? 'rotate-180 text-slate-950' : 'text-cyan-400'}`} />
                 {isCatActive && !isOpen && (
                   <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_#00f2fe] animate-pulse" />
                 )}
@@ -2937,12 +2943,15 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
             title="Tüm Ulusal Göstergeler Kataloğu & Arama"
           >
             <Database className="w-3.5 h-3.5" />
-            <span className="hidden md:inline">
+            <span className="hidden xl:inline">
               {!['export', 'osb', 'women', 'population', 'gdp'].includes(activeMetric)
                 ? `KATALOG: ${getCategoryLabel(activeMetric).toUpperCase()}`
                 : 'TÜM KATALOG'}
             </span>
-            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isCatalogOpen ? 'rotate-180' : ''}`} />
+            <span className="inline xl:hidden text-[11px] font-bold">
+              KATALOG
+            </span>
+            <ChevronDown className={`w-3 h-3 sm:w-3.5 sm:h-3.5 transition-transform duration-200 ${isCatalogOpen ? 'rotate-180' : ''}`} />
           </button>
 
           {/* Catalog Popover */}
@@ -3035,28 +3044,28 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
         </div>
       </div>
 
-      {/* Top Right: Compact Unified 3D Controls Toolbar */}
-      <div className="absolute top-3 right-4 z-20 flex flex-col items-end gap-2">
-        <div className="flex items-center gap-1 bg-[#0b172a]/92 backdrop-blur-md p-1 rounded-xs border border-cyan-500/40 text-cyan-300 shadow-[0_4px_20px_rgba(0,0,0,0.5)]">
-          {/* 3D Harita & Görünüm Ayarları (Unified Kaide + Billboard Popover) */}
-          <div className="relative">
-            <button
-              onClick={() => {
-                setIsCatalogOpen(false);
-                setOpenCategory(null);
-                setIsSettingsOpen(!isSettingsOpen);
-              }}
-              className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-['Rajdhani'] font-bold rounded-xs transition-all ${
-                isSettingsOpen
-                  ? 'bg-cyan-500 text-slate-950 shadow-[0_0_10px_#00f2fe]'
-                  : 'text-cyan-300 hover:text-white hover:bg-cyan-500/20'
-              }`}
-              title="3B Harita Ayarları (Kaide Kabartma & 3B Veri Etiketi Tasarımı)"
-            >
-              <Sliders className="w-3.5 h-3.5 text-cyan-400" />
-              <span className="hidden sm:inline">3B AYARLAR</span>
-              <ChevronDown className={`w-3 h-3 transition-transform ${isSettingsOpen ? 'rotate-180' : ''}`} />
-            </button>
+        {/* Right Side: Compact Unified 3D Controls Toolbar */}
+        <div className="flex flex-col items-end gap-1.5 pointer-events-auto shrink-0 ml-auto">
+          <div className="flex items-center gap-1 bg-[#0b172a]/92 backdrop-blur-md p-1 rounded-xs border border-cyan-500/40 text-cyan-300 shadow-[0_4px_20px_rgba(0,0,0,0.5)]">
+            {/* 3D Harita & Görünüm Ayarları (Unified Kaide + Billboard Popover) */}
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setIsCatalogOpen(false);
+                  setOpenCategory(null);
+                  setIsSettingsOpen(!isSettingsOpen);
+                }}
+                className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 text-xs font-['Rajdhani'] font-bold rounded-xs transition-all ${
+                  isSettingsOpen
+                    ? 'bg-cyan-500 text-slate-950 shadow-[0_0_10px_#00f2fe]'
+                    : 'text-cyan-300 hover:text-white hover:bg-cyan-500/20'
+                }`}
+                title="3B Harita Ayarları (Kaide Kabartma & 3B Veri Etiketi Tasarımı)"
+              >
+                <Sliders className="w-3.5 h-3.5 text-cyan-400" />
+                <span className="hidden lg:inline">3B AYARLAR</span>
+                <ChevronDown className={`w-3 h-3 transition-transform ${isSettingsOpen ? 'rotate-180' : ''}`} />
+              </button>
 
             {/* Unified Settings Popover */}
             {isSettingsOpen && (
@@ -3292,6 +3301,7 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
           </div>
         )}
       </div>
+    </div>
 
       {/* Floating Hover Info Card with Maximum Vibrancy and High Contrast */}
       {hoveredInfo && (() => {

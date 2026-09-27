@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   X, 
   Search, 
@@ -17,8 +17,14 @@ import {
   Droplets, 
   BarChart3,
   Sparkles,
-  Check
+  Check,
+  Download,
+  FileText,
+  Image as ImageIcon,
+  Loader2
 } from 'lucide-react';
+import { toPng } from 'html-to-image';
+import { jsPDF } from 'jspdf';
 import { 
   PROVINCE_CODES, 
   PROVINCE_TO_CODE, 
@@ -58,6 +64,14 @@ export const ProvinceDossierModal: React.FC<ProvinceDossierModalProps> = ({
   // Modal active view tab: 'region' (26 İBBS-2 Bölge Karnesi) or 'province' (81 İl Karnesi)
   const [activeTab, setActiveTab] = useState<'province' | 'region'>(mapLevel);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Export states (PNG / PDF generation)
+  const [isExporting, setIsExporting] = useState<'png' | 'pdf' | null>(null);
+  const [exportMessage, setExportMessage] = useState<string>('');
+  
+  // DOM References for unconstrained full-height capture
+  const printableContentRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Sync active tab whenever the modal opens or mapLevel changes
   useEffect(() => {
@@ -213,7 +227,119 @@ export const ProvinceDossierModal: React.FC<ProvinceDossierModalProps> = ({
     }
   };
 
+  // High-fidelity PNG & PDF Export Handler
+  const handleDownload = async (format: 'png' | 'pdf') => {
+    if (!printableContentRef.current || isExporting) return;
+    setIsExporting(format);
+    setExportMessage(format === 'png' ? 'PNG Oluşturuluyor...' : 'PDF Hazırlanıyor...');
+
+    try {
+      const scrollEl = scrollContainerRef.current;
+      const originalMaxHeight = scrollEl ? scrollEl.style.maxHeight : '';
+      const originalOverflow = scrollEl ? scrollEl.style.overflow : '';
+
+      // Temporarily expand scroll container so the full report is captured in 100% height
+      if (scrollEl) {
+        scrollEl.style.maxHeight = 'none';
+        scrollEl.style.overflow = 'visible';
+      }
+
+      // Small delay for DOM reflow
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      const targetEl = printableContentRef.current;
+      const dataUrl = await toPng(targetEl, {
+        pixelRatio: 2, // Crisp retina 2x sharpness
+        backgroundColor: '#051126',
+        cacheBust: true,
+        filter: (node) => {
+          if (node instanceof HTMLElement && node.classList.contains('no-export')) {
+            return false;
+          }
+          return true;
+        }
+      });
+
+      // Restore scroll constraints
+      if (scrollEl) {
+        scrollEl.style.maxHeight = originalMaxHeight;
+        scrollEl.style.overflow = originalOverflow;
+      }
+
+      const dateStr = new Date().toISOString().split('T')[0];
+      const titlePrefix = activeTab === 'region' 
+        ? `${activeRegion.code}_${activeRegion.shortCode}_Bolge_Karnesi_${dateStr}`
+        : `${selectedProvinceCode}_${currentProvinceName}_Il_Karnesi_${dateStr}`;
+      const cleanFileName = titlePrefix.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+      if (format === 'png') {
+        const link = document.createElement('a');
+        link.download = `${cleanFileName}.png`;
+        link.href = dataUrl;
+        link.click();
+      } else {
+        // PDF generation using jsPDF with authentic standard A4 print margins (14mm)
+        const img = new Image();
+        img.src = dataUrl;
+        await new Promise((resolve) => {
+          img.onload = resolve;
+        });
+
+        const imgWidth = img.width;
+        const imgHeight = img.height;
+
+        // Standard ISO 216 A4 Sheet Dimensions (mm)
+        const A4_WIDTH_MM = 210;
+        const A4_HEIGHT_MM = 297;
+
+        // Safe Print Margins (14mm Left/Right, 15mm Top)
+        // Ensures no clipping on physical printers and leaves balanced whitespace as requested
+        const MARGIN_X_MM = 14;
+        const MARGIN_Y_MM = 14;
+
+        const maxPrintWidth = A4_WIDTH_MM - (MARGIN_X_MM * 2); // 182 mm
+        const maxPrintHeight = A4_HEIGHT_MM - (MARGIN_Y_MM * 2); // 269 mm
+
+        const imgAspectRatio = imgWidth / imgHeight;
+
+        let pdfRenderWidth = maxPrintWidth;
+        let pdfRenderHeight = pdfRenderWidth / imgAspectRatio;
+
+        // If height exceeds printable area, scale proportionally
+        if (pdfRenderHeight > maxPrintHeight) {
+          pdfRenderHeight = maxPrintHeight;
+          pdfRenderWidth = pdfRenderHeight * imgAspectRatio;
+        }
+
+        // Center horizontally (giving exact 14mm left and right margins)
+        const posX = (A4_WIDTH_MM - pdfRenderWidth) / 2;
+        // Balanced top position: at least 14mm, gracefully spaced
+        const posY = Math.min(18, Math.max(14, (A4_HEIGHT_MM - pdfRenderHeight) / 2));
+
+        const pdf = new jsPDF({
+          orientation: 'portrait',
+          unit: 'mm',
+          format: 'a4'
+        });
+
+        pdf.addImage(dataUrl, 'PNG', posX, posY, pdfRenderWidth, pdfRenderHeight, undefined, 'FAST');
+        pdf.save(`${cleanFileName}.pdf`);
+      }
+    } catch (err) {
+      console.error('Kayıt / İndirme hatası:', err);
+    } finally {
+      setIsExporting(null);
+      setExportMessage('');
+    }
+  };
+
   if (!isOpen) return null;
+
+  const currentDateDisplay = new Date().toLocaleDateString('tr-TR', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 md:p-6 bg-black/85 backdrop-blur-md">
@@ -227,12 +353,12 @@ export const ProvinceDossierModal: React.FC<ProvinceDossierModalProps> = ({
         <span className={`absolute bottom-0 left-0 w-3.5 h-3.5 border-b-2 border-l-2 ${activeTab === 'region' ? 'border-amber-400' : 'border-cyan-400'} z-10`} />
         <span className={`absolute bottom-0 right-0 w-3.5 h-3.5 border-b-2 border-r-2 ${activeTab === 'region' ? 'border-amber-400' : 'border-cyan-400'} z-10`} />
 
-        {/* Modal Top Bar with Tab Switcher */}
-        <div className={`px-4 sm:px-5 py-3 ${
+        {/* Modal Top Bar with Tab Switcher & Quick Download Buttons */}
+        <div className={`px-4 sm:px-5 py-2.5 ${
           activeTab === 'region' 
             ? 'bg-gradient-to-r from-[#2c1a05] via-[#1a1104] to-[#051126] border-b border-amber-500/30' 
             : 'bg-gradient-to-r from-[#092248] via-[#040e24] to-[#040e24] border-b border-cyan-500/20'
-        } flex flex-wrap items-center justify-between gap-3`}>
+        } flex flex-wrap items-center justify-between gap-2.5`}>
           
           <div className="flex items-center gap-2.5 min-w-0">
             <span className={`w-2.5 h-5 rounded-xs shrink-0 ${
@@ -287,12 +413,45 @@ export const ProvinceDossierModal: React.FC<ProvinceDossierModalProps> = ({
             </div>
           </div>
 
-          {/* Right Controls: Tab Switcher (81 İl / 26 Bölge) & Close */}
+          {/* Right Controls: PNG / PDF Download Buttons, Tab Switcher & Close */}
           <div className="flex items-center gap-2">
+            
+            {/* Download Buttons (PNG & PDF) */}
+            <div className="flex items-center gap-1.5 bg-[#030919]/90 p-1 rounded-xs border border-cyan-500/30 shadow-inner">
+              <button
+                onClick={() => handleDownload('png')}
+                disabled={isExporting !== null}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-xs bg-[#07193b] hover:bg-cyan-500 hover:text-slate-950 text-cyan-200 border border-cyan-500/40 text-xs font-bold font-['Rajdhani'] transition-all shadow-[0_0_8px_rgba(0,242,254,0.15)] disabled:opacity-50"
+                title="Karnenin yüksek çözünürlüklü PNG görselini indir"
+              >
+                {isExporting === 'png' ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-300" />
+                ) : (
+                  <ImageIcon className="w-3.5 h-3.5 text-cyan-400" />
+                )}
+                <span>PNG İNDİR</span>
+              </button>
+
+              <button
+                onClick={() => handleDownload('pdf')}
+                disabled={isExporting !== null}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-xs bg-gradient-to-r from-rose-950/80 to-amber-950/80 hover:from-rose-600 hover:to-amber-500 hover:text-white text-rose-200 border border-rose-500/40 text-xs font-bold font-['Rajdhani'] transition-all shadow-[0_0_8px_rgba(244,63,94,0.15)] disabled:opacity-50"
+                title="A4 Standart Yazıcı Uyumlu (14mm Güvenli Kenar Boşluklu) PDF İndir"
+              >
+                {isExporting === 'pdf' ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-300" />
+                ) : (
+                  <FileText className="w-3.5 h-3.5 text-rose-400" />
+                )}
+                <span>PDF (A4 YAZICI)</span>
+              </button>
+            </div>
+
+            {/* Level switch (81 İl / 26 Bölge) */}
             <div className="flex items-center p-0.5 rounded-xs bg-[#030919] border border-cyan-500/30 font-mono text-xs">
               <button
                 onClick={() => handleSwitchTab('region')}
-                className={`flex items-center gap-1.5 px-3 py-1 font-['Rajdhani'] font-bold rounded-xs transition-all ${
+                className={`flex items-center gap-1.5 px-2.5 py-1 font-['Rajdhani'] font-bold rounded-xs transition-all ${
                   activeTab === 'region'
                     ? 'bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 shadow-[0_0_10px_#f59e0b] font-black'
                     : 'text-amber-300/70 hover:text-amber-200 hover:bg-amber-950/40'
@@ -305,7 +464,7 @@ export const ProvinceDossierModal: React.FC<ProvinceDossierModalProps> = ({
 
               <button
                 onClick={() => handleSwitchTab('province')}
-                className={`flex items-center gap-1.5 px-3 py-1 font-['Rajdhani'] font-bold rounded-xs transition-all ${
+                className={`flex items-center gap-1.5 px-2.5 py-1 font-['Rajdhani'] font-bold rounded-xs transition-all ${
                   activeTab === 'province'
                     ? 'bg-cyan-500 text-slate-950 shadow-[0_0_10px_#00f2fe] font-black'
                     : 'text-slate-300 hover:text-white hover:bg-cyan-950/40'
@@ -327,8 +486,8 @@ export const ProvinceDossierModal: React.FC<ProvinceDossierModalProps> = ({
           </div>
         </div>
 
-        {/* Fast Search & Selection Bar */}
-        <div className="p-2.5 sm:p-3 bg-[#030919] border-b border-cyan-500/15 flex items-center gap-2">
+        {/* Fast Search & Selection Bar (Excluded from export) */}
+        <div className="p-2.5 sm:p-3 bg-[#030919] border-b border-cyan-500/15 flex items-center gap-2 no-export">
           <Search className={`w-4 h-4 ml-2 shrink-0 ${activeTab === 'region' ? 'text-amber-400' : 'text-cyan-400'}`} />
           <input
             type="text"
@@ -353,9 +512,9 @@ export const ProvinceDossierModal: React.FC<ProvinceDossierModalProps> = ({
           )}
         </div>
 
-        {/* Search Results Drawer if user is typing */}
+        {/* Search Results Drawer if user is typing (Excluded from export) */}
         {searchTerm && (
-          <div className="max-h-44 overflow-y-auto bg-[#07193b] border-b border-cyan-500/20 p-2 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-1.5 text-xs">
+          <div className="max-h-44 overflow-y-auto bg-[#07193b] border-b border-cyan-500/20 p-2 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-1.5 text-xs no-export">
             {activeTab === 'region' ? (
               filteredRegions.map((reg) => (
                 <button
@@ -409,443 +568,510 @@ export const ProvinceDossierModal: React.FC<ProvinceDossierModalProps> = ({
           </div>
         )}
 
-        {/* Modal Main Content */}
-        <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1">
+        {/* Modal Main Content Container with Printable Reference */}
+        <div ref={scrollContainerRef} className="p-3 sm:p-4 overflow-y-auto space-y-4 flex-1">
+          <div 
+            ref={printableContentRef} 
+            className={`space-y-4 bg-[#051126] p-3.5 sm:p-4 rounded-xs border ${
+              activeTab === 'region' 
+                ? 'border-amber-500/40 shadow-[0_0_20px_rgba(245,158,11,0.12)]' 
+                : 'border-cyan-500/40 shadow-[0_0_20px_rgba(0,242,254,0.12)]'
+            }`}
+          >
 
-          {/* ========================================================= */}
-          {/* TAB 1: 26 BÖLGE KARNESİ (BÖLGESEL AGREGAT VERİLER)        */}
-          {/* ========================================================= */}
-          {activeTab === 'region' && (
-            <>
-              {/* Regional Agency Header Card */}
-              <div className="bg-gradient-to-r from-[#201504]/90 via-[#140e02]/90 to-[#07193b]/70 border border-amber-500/30 p-3.5 rounded-xs flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-[0_0_20px_rgba(245,158,11,0.12)]">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <Globe className="w-5 h-5 text-amber-400 animate-spin-slow" />
-                    <span className="font-['Orbitron'] font-bold text-base text-white tracking-wide">
-                      {activeRegion.agency} ({activeRegion.shortCode})
-                    </span>
-                    <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-400/40 rounded text-[11px] font-mono font-bold">
-                      İBBS-2 KODU: {activeRegion.code}
-                    </span>
-                  </div>
-                  <div className="text-xs text-slate-300 mt-1 font-mono">
-                    Kalkınma Ajansı Faaliyet Bölgesi: <strong className="text-amber-200">{activeRegion.provinces.join(' · ')}</strong>
-                  </div>
-                </div>
-
-                {/* Quick Province Badges (Clickable) */}
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[11px] font-mono text-slate-400 mr-1">Bölge İlleri:</span>
-                  {regionalData.provinces.map((p) => (
-                    <button
-                      key={p.code}
-                      onClick={() => {
-                        onSelectProvince(p.code);
-                        handleSwitchTab('province');
-                      }}
-                      className="px-2 py-1 rounded bg-[#091b38] hover:bg-cyan-500 hover:text-slate-950 border border-cyan-500/30 text-cyan-200 text-xs font-semibold transition-all flex items-center gap-1"
-                      title={`${p.name} İl Karnesini Görüntüle`}
-                    >
-                      <span>{p.name}</span>
-                      <span className="font-mono text-[10px] opacity-70">({p.code})</span>
-                    </button>
-                  ))}
-                </div>
+            {/* Official Report Header Strip (Included in exported PNG & PDF) */}
+            <div className="p-3 bg-gradient-to-r from-[#040e24] via-[#091f42] to-[#040e24] border border-cyan-500/30 rounded-xs flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
+              <div className="flex items-center gap-2">
+                <Globe className="w-4 h-4 text-cyan-400" />
+                <span className="font-['Orbitron'] font-bold text-white tracking-wider">
+                  TÜRKİYE BÖLGESEL VERİ PORTALI
+                </span>
+                <span className="text-cyan-400 font-semibold">
+                  · {activeTab === 'region' ? 'İBBS-2 DÜZEY-2 BÖLGE RAPORU' : '81 İL RESMİ GÖSTERGE KARNESİ'}
+                </span>
               </div>
-
-              {/* 4 Big Regional Aggregate KPI Cards */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {/* 1. Regional Export */}
-                <div className="bg-[#1b1406]/80 border border-amber-500/40 p-3 rounded-xs shadow-[0_0_15px_rgba(245,158,11,0.1)]">
-                  <div className="flex items-center justify-between text-xs text-amber-300/90 uppercase font-semibold">
-                    <span>2025 Bölge İhracatı</span>
-                    <TrendingUp className="w-3.5 h-3.5 text-amber-400" />
-                  </div>
-                  <div className="text-xl font-bold font-['Orbitron'] text-white mt-1">
-                    {regionalData.totalExport >= 1e9
-                      ? `$${(regionalData.totalExport / 1e9).toFixed(2)}B`
-                      : `$${(regionalData.totalExport / 1e6).toFixed(1)}M`}
-                  </div>
-                  <div className="text-[10px] text-amber-400/80 font-mono mt-0.5 flex items-center justify-between">
-                    <span>${regionalData.totalExport.toLocaleString('tr-TR')}</span>
-                    <span className="text-emerald-400 font-bold">
-                      {((regionalData.totalExport / 255420000000) * 100).toFixed(2)}% TR Payı
-                    </span>
-                  </div>
-                </div>
-
-                {/* 2. Regional OSB Infrastructure */}
-                <div className="bg-[#1b1406]/80 border border-amber-500/40 p-3 rounded-xs shadow-[0_0_15px_rgba(245,158,11,0.1)]">
-                  <div className="flex items-center justify-between text-xs text-amber-300/90 uppercase font-semibold">
-                    <span>Toplam Sanayi OSB</span>
-                    <Factory className="w-3.5 h-3.5 text-amber-400" />
-                  </div>
-                  <div className="text-xl font-bold font-['Orbitron'] text-white mt-1">
-                    {regionalData.totalOsb.count} <span className="text-xs text-amber-300 font-normal">Bölge</span>
-                  </div>
-                  <div className="text-[10px] text-amber-400/80 font-mono mt-0.5 flex items-center justify-between">
-                    <span>{regionalData.totalOsb.isletmede} Faal İşletmede</span>
-                    <span>{regionalData.totalOsb.areaHa.toLocaleString('tr-TR')} Ha</span>
-                  </div>
-                </div>
-
-                {/* 3. Regional Women Share */}
-                <div className="bg-[#1b1406]/80 border border-amber-500/40 p-3 rounded-xs shadow-[0_0_15px_rgba(245,158,11,0.1)]">
-                  <div className="flex items-center justify-between text-xs text-amber-300/90 uppercase font-semibold">
-                    <span>Kadın İhracat Katkısı</span>
-                    <Award className="w-3.5 h-3.5 text-amber-400" />
-                  </div>
-                  <div className="text-xl font-bold font-['Orbitron'] text-white mt-1">
-                    %{regionalData.womenShare.toFixed(1)}
-                  </div>
-                  <div className="text-[10px] text-amber-400/80 font-mono mt-0.5">
-                    İhracat Ağırlıklı Bölge Ortalaması
-                  </div>
-                </div>
-
-                {/* 4. Regional GDP per Capita & Population */}
-                <div className="bg-[#1b1406]/80 border border-amber-500/40 p-3 rounded-xs shadow-[0_0_15px_rgba(245,158,11,0.1)]">
-                  <div className="flex items-center justify-between text-xs text-amber-300/90 uppercase font-semibold">
-                    <span>Kişi Başına GSYH</span>
-                    <Users className="w-3.5 h-3.5 text-emerald-400" />
-                  </div>
-                  <div className="text-xl font-bold font-['Orbitron'] text-white mt-1">
-                    ${regionalData.overview.gdpPerCapitaUsd.toLocaleString('tr-TR')}
-                  </div>
-                  <div className="text-[10px] text-slate-300/80 font-mono mt-0.5">
-                    Bölge Nüfusu: <strong className="text-white">{regionalData.totalPopulation.toLocaleString('tr-TR')}</strong>
-                  </div>
-                </div>
+              <div className="flex items-center gap-3 text-slate-400 text-[11px]">
+                <span>Rapor Tarihi: <strong className="text-slate-200">{currentDateDisplay}</strong></span>
+                <span>·</span>
+                <span className="text-cyan-300 font-bold">3D PORTAL v2.5 RESMİ ÇIKTI</span>
               </div>
+            </div>
 
-              {/* Regional OSB Breakdown Detail Table */}
-              <div className="bg-[#061736]/70 border border-cyan-500/20 p-4 rounded-xs">
-                <h4 className="text-sm font-bold uppercase tracking-wider text-cyan-300 mb-3 flex items-center justify-between">
-                  <span className="flex items-center gap-2">
-                    <Layers className="w-4 h-4 text-cyan-400" />
-                    Bölge Geneli Sanayi Bölgeleri (OSB) Altyapı ve Parsel Dökümü
-                  </span>
-                  <span className="text-xs font-mono text-cyan-400/80">
-                    Toplam {regionalData.totalOsb.count} OSB / {regionalData.totalOsb.areaHa.toLocaleString('tr-TR')} Hektar
-                  </span>
-                </h4>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                  <div className="bg-[#040e24] p-2.5 rounded border border-cyan-500/10">
-                    <span className="text-slate-400 block mb-1">Toplam Sanayi Parseli</span>
-                    <span className="font-['Orbitron'] text-base font-bold text-cyan-200">
-                      {regionalData.totalOsb.parsels.toLocaleString('tr-TR')}
-                    </span>
-                    <span className="text-[10px] text-cyan-400/60 block mt-0.5 font-mono">Tahsisli & Boş Parseller</span>
+            {/* ========================================================= */}
+            {/* TAB 1: 26 BÖLGE KARNESİ (BÖLGESEL AGREGAT VERİLER)        */}
+            {/* ========================================================= */}
+            {activeTab === 'region' && (
+              <>
+                {/* Regional Agency Header Card */}
+                <div className="bg-gradient-to-r from-[#201504]/90 via-[#140e02]/90 to-[#07193b]/70 border border-amber-500/30 p-3.5 rounded-xs flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-[0_0_20px_rgba(245,158,11,0.12)]">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Globe className="w-5 h-5 text-amber-400" />
+                      <span className="font-['Orbitron'] font-bold text-base text-white tracking-wide">
+                        {activeRegion.agency} ({activeRegion.shortCode})
+                      </span>
+                      <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-400/40 rounded text-[11px] font-mono font-bold">
+                        İBBS-2 KODU: {activeRegion.code}
+                      </span>
+                    </div>
+                    <div className="text-xs text-slate-300 mt-1 font-mono">
+                      Kalkınma Ajansı Faaliyet Bölgesi: <strong className="text-amber-200">{activeRegion.provinces.join(' · ')}</strong>
+                    </div>
                   </div>
-                  <div className="bg-[#040e24] p-2.5 rounded border border-cyan-500/10">
-                    <span className="text-slate-400 block mb-1">Faaliyetteki / İşletmede</span>
-                    <span className="font-['Orbitron'] text-base font-bold text-emerald-400">
-                      {regionalData.totalOsb.isletmede} OSB
-                    </span>
-                    <span className="text-[10px] text-emerald-400/60 block mt-0.5 font-mono">Fiili Üretim Yapan</span>
-                  </div>
-                  <div className="bg-[#040e24] p-2.5 rounded border border-cyan-500/10">
-                    <span className="text-slate-400 block mb-1">Altyapı & Planlama Aşaması</span>
-                    <span className="font-['Orbitron'] text-base font-bold text-cyan-300">
-                      {regionalData.totalOsb.altyapi + regionalData.totalOsb.planlama} OSB
-                    </span>
-                    <span className="text-[10px] text-cyan-400/60 block mt-0.5 font-mono">Kamulaştırma: {regionalData.totalOsb.kamulastirma}</span>
-                  </div>
-                  <div className="bg-[#040e24] p-2.5 rounded border border-cyan-500/10">
-                    <span className="text-slate-400 block mb-1">Karma / İhtisas / TDİ Türü</span>
-                    <span className="font-['Orbitron'] text-base font-bold text-amber-300">
-                      {regionalData.totalOsb.karma} / {regionalData.totalOsb.ihtisas} / {regionalData.totalOsb.tdiosb}
-                    </span>
-                    <span className="text-[10px] text-amber-400/60 block mt-0.5 font-mono">Sektörel İhtisas Dağılımı</span>
+
+                  {/* Quick Province Badges (Clickable in UI) */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[11px] font-mono text-slate-400 mr-1">Bölge İlleri:</span>
+                    {regionalData.provinces.map((p) => (
+                      <button
+                        key={p.code}
+                        onClick={() => {
+                          onSelectProvince(p.code);
+                          handleSwitchTab('province');
+                        }}
+                        className="px-2 py-1 rounded bg-[#091b38] hover:bg-cyan-500 hover:text-slate-950 border border-cyan-500/30 text-cyan-200 text-xs font-semibold transition-all flex items-center gap-1"
+                        title={`${p.name} İl Karnesini Görüntüle`}
+                      >
+                        <span>{p.name}</span>
+                        <span className="font-mono text-[10px] opacity-70">({p.code})</span>
+                      </button>
+                    ))}
                   </div>
                 </div>
-              </div>
 
-              {/* Regional Socio-Demographics (Population-Weighted Averages) */}
-              <div className="bg-[#061736]/70 border border-cyan-500/20 p-4 rounded-xs">
-                <h4 className="text-sm font-bold uppercase tracking-wider text-cyan-300 mb-3 flex items-center justify-between">
-                  <span className="flex items-center gap-2">
-                    <Building className="w-4 h-4 text-cyan-400" />
-                    Bölgesel Sosyo-Demografik ve Yaşam Endeksleri (Nüfus Ağırlıklı Ortalamalar)
-                  </span>
-                  <span className="text-xs font-mono text-cyan-400/80">
-                    Toplam Nüfus: {regionalData.totalPopulation.toLocaleString('tr-TR')}
-                  </span>
-                </h4>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 text-xs">
-                  <div className="bg-[#040e24] p-2.5 rounded border border-cyan-500/10">
-                    <span className="text-slate-400 block text-[11px] mb-0.5">İstihdam Oranı</span>
-                    <span className="font-mono text-base font-bold text-white">%{regionalData.overview.employmentRate}</span>
-                    <span className="text-[10px] text-slate-400/70 block mt-0.5 font-mono">15+ Yaş İstihdam</span>
+                {/* 4 Big Regional Aggregate KPI Cards */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {/* 1. Regional Export */}
+                  <div className="bg-[#1b1406]/80 border border-amber-500/40 p-3 rounded-xs shadow-[0_0_15px_rgba(245,158,11,0.1)]">
+                    <div className="flex items-center justify-between text-xs text-amber-300/90 uppercase font-semibold">
+                      <span>2025 Bölge İhracatı</span>
+                      <TrendingUp className="w-3.5 h-3.5 text-amber-400" />
+                    </div>
+                    <div className="text-xl font-bold font-['Orbitron'] text-white mt-1">
+                      {regionalData.totalExport >= 1e9
+                        ? `$${(regionalData.totalExport / 1e9).toFixed(2)}B`
+                        : `$${(regionalData.totalExport / 1e6).toFixed(1)}M`}
+                    </div>
+                    <div className="text-[10px] text-amber-400/80 font-mono mt-0.5 flex items-center justify-between">
+                      <span>${regionalData.totalExport.toLocaleString('tr-TR')}</span>
+                      <span className="text-emerald-400 font-bold">
+                        {((regionalData.totalExport / 255420000000) * 100).toFixed(2)}% TR Payı
+                      </span>
+                    </div>
                   </div>
-                  <div className="bg-[#040e24] p-2.5 rounded border border-cyan-500/10">
-                    <span className="text-slate-400 block text-[11px] mb-0.5">İşsizlik Oranı</span>
-                    <span className="font-mono text-base font-bold text-rose-400">%{regionalData.overview.unemploymentRate}</span>
-                    <span className="text-[10px] text-slate-400/70 block mt-0.5 font-mono">Bölgesel İşgücü</span>
+
+                  {/* 2. Regional OSB Infrastructure */}
+                  <div className="bg-[#1b1406]/80 border border-amber-500/40 p-3 rounded-xs shadow-[0_0_15px_rgba(245,158,11,0.1)]">
+                    <div className="flex items-center justify-between text-xs text-amber-300/90 uppercase font-semibold">
+                      <span>Toplam Sanayi OSB</span>
+                      <Factory className="w-3.5 h-3.5 text-amber-400" />
+                    </div>
+                    <div className="text-xl font-bold font-['Orbitron'] text-white mt-1">
+                      {regionalData.totalOsb.count} <span className="text-xs text-amber-300 font-normal">Bölge</span>
+                    </div>
+                    <div className="text-[10px] text-amber-400/80 font-mono mt-0.5 flex items-center justify-between">
+                      <span>{regionalData.totalOsb.isletmede} Faal İşletmede</span>
+                      <span>{regionalData.totalOsb.areaHa.toLocaleString('tr-TR')} Ha</span>
+                    </div>
                   </div>
-                  <div className="bg-[#040e24] p-2.5 rounded border border-cyan-500/10">
-                    <span className="text-slate-400 block text-[11px] mb-0.5">Ort. Eğitim Süresi</span>
-                    <span className="font-mono text-base font-bold text-white">{regionalData.overview.avgEducationYears} Yıl</span>
-                    <span className="text-[10px] text-slate-400/70 block mt-0.5 font-mono">Örgün Eğitim Ort.</span>
+
+                  {/* 3. Regional Women Share */}
+                  <div className="bg-[#1b1406]/80 border border-amber-500/40 p-3 rounded-xs shadow-[0_0_15px_rgba(245,158,11,0.1)]">
+                    <div className="flex items-center justify-between text-xs text-amber-300/90 uppercase font-semibold">
+                      <span>Kadın İhracat Katkısı</span>
+                      <Award className="w-3.5 h-3.5 text-amber-400" />
+                    </div>
+                    <div className="text-xl font-bold font-['Orbitron'] text-white mt-1">
+                      %{regionalData.womenShare.toFixed(1)}
+                    </div>
+                    <div className="text-[10px] text-amber-400/80 font-mono mt-0.5">
+                      İhracat Ağırlıklı Bölge Ortalaması
+                    </div>
                   </div>
-                  <div className="bg-[#040e24] p-2.5 rounded border border-cyan-500/10">
-                    <span className="text-slate-400 block text-[11px] mb-0.5">SEGE Gelişmişlik</span>
-                    <span className="font-mono text-base font-bold text-amber-300">{regionalData.overview.sesScore} / 100</span>
-                    <span className="text-[10px] text-slate-400/70 block mt-0.5 font-mono">Sosyoekonomik Skoru</span>
-                  </div>
-                  <div className="bg-[#040e24] p-2.5 rounded border border-cyan-500/10">
-                    <span className="text-slate-400 block text-[11px] mb-0.5">Hastane Yatak / 100k</span>
-                    <span className="font-mono text-base font-bold text-emerald-400">{regionalData.overview.hospitalBedsPer100k} Yatak</span>
-                    <span className="text-[10px] text-slate-400/70 block mt-0.5 font-mono">Sağlık Kapasitesi</span>
+
+                  {/* 4. Regional GDP per Capita & Population */}
+                  <div className="bg-[#1b1406]/80 border border-amber-500/40 p-3 rounded-xs shadow-[0_0_15px_rgba(245,158,11,0.1)]">
+                    <div className="flex items-center justify-between text-xs text-amber-300/90 uppercase font-semibold">
+                      <span>Kişi Başına GSYH</span>
+                      <Users className="w-3.5 h-3.5 text-emerald-400" />
+                    </div>
+                    <div className="text-xl font-bold font-['Orbitron'] text-white mt-1">
+                      ${regionalData.overview.gdpPerCapitaUsd.toLocaleString('tr-TR')}
+                    </div>
+                    <div className="text-[10px] text-slate-300/80 font-mono mt-0.5">
+                      Bölge Nüfusu: <strong className="text-white">{regionalData.totalPopulation.toLocaleString('tr-TR')}</strong>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Member Provinces Comparison Table */}
-              <div className="bg-[#061736]/70 border border-cyan-500/20 p-4 rounded-xs">
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-sm font-bold uppercase tracking-wider text-cyan-300 flex items-center gap-2">
-                    <BarChart3 className="w-4 h-4 text-cyan-400" />
-                    Bölge Kapsamındaki İllerin Performans ve Katkı Dağılımı ({regionalData.provinces.length} İl)
+                {/* Regional OSB Breakdown Detail Table */}
+                <div className="bg-[#061736]/70 border border-cyan-500/20 p-4 rounded-xs">
+                  <h4 className="text-sm font-bold uppercase tracking-wider text-cyan-300 mb-3 flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-cyan-400" />
+                      Bölge Geneli Sanayi Bölgeleri (OSB) Altyapı ve Parsel Dökümü
+                    </span>
+                    <span className="text-xs font-mono text-cyan-400/80">
+                      Toplam {regionalData.totalOsb.count} OSB / {regionalData.totalOsb.areaHa.toLocaleString('tr-TR')} Hektar
+                    </span>
                   </h4>
-                  <span className="text-[11px] text-slate-400 font-mono">
-                    Bir ile tıklayarak il karnesine geçiş yapabilirsiniz
-                  </span>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs font-mono border-collapse">
-                    <thead>
-                      <tr className="border-b border-cyan-500/20 text-cyan-300/80 text-[11px] uppercase bg-[#040f28]">
-                        <th className="py-2 px-3">İl / Plaka</th>
-                        <th className="py-2 px-3 text-right">2025 İhracat</th>
-                        <th className="py-2 px-3 text-right">Bölge Payı</th>
-                        <th className="py-2 px-3 text-center">OSB (Faal)</th>
-                        <th className="py-2 px-3 text-right">Nüfus</th>
-                        <th className="py-2 px-3 text-right">GSYH / Kişi</th>
-                        <th className="py-2 px-3 text-center">SEGE Skoru</th>
-                        <th className="py-2 px-3 text-center">İşlem</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-cyan-500/10">
-                      {regionalData.provinces.map((prov) => {
-                        const exportShare = regionalData.totalExport > 0 
-                          ? ((prov.export / regionalData.totalExport) * 100).toFixed(1) 
-                          : '0';
-                        const isCurrentProvince = prov.code === selectedProvinceCode;
-
-                        return (
-                          <tr 
-                            key={prov.code}
-                            className={`hover:bg-cyan-950/40 transition-colors ${
-                              isCurrentProvince ? 'bg-cyan-900/20 font-bold' : ''
-                            }`}
-                          >
-                            <td className="py-2.5 px-3">
-                              <div className="flex items-center gap-2">
-                                <span className="w-5 h-5 rounded bg-cyan-950 border border-cyan-500/40 text-[10px] font-bold text-cyan-300 flex items-center justify-center shrink-0">
-                                  {prov.code}
-                                </span>
-                                <span className="font-['Rajdhani'] font-bold text-sm text-white">
-                                  {prov.name}
-                                </span>
-                                {isCurrentProvince && (
-                                  <span className="px-1.5 py-0.2 bg-cyan-500 text-slate-950 text-[9px] font-bold rounded">
-                                    SEÇİLİ
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                            <td className="py-2.5 px-3 text-right font-bold text-amber-300">
-                              ${(prov.export / 1e6).toFixed(1)}M
-                            </td>
-                            <td className="py-2.5 px-3 text-right">
-                              <span className="px-1.5 py-0.5 rounded bg-amber-950/60 text-amber-200 border border-amber-500/30 text-[11px] font-bold">
-                                %{exportShare}
-                              </span>
-                            </td>
-                            <td className="py-2.5 px-3 text-center text-cyan-200">
-                              {prov.osb.count} ({prov.osb.isletmede})
-                            </td>
-                            <td className="py-2.5 px-3 text-right text-slate-300">
-                              {prov.overview.population.toLocaleString('tr-TR')}
-                            </td>
-                            <td className="py-2.5 px-3 text-right text-emerald-400 font-bold">
-                              ${prov.overview.gdpPerCapitaUsd.toLocaleString('tr-TR')}
-                            </td>
-                            <td className="py-2.5 px-3 text-center text-cyan-300">
-                              {prov.overview.sesScore}
-                            </td>
-                            <td className="py-2.5 px-3 text-center">
-                              <button
-                                onClick={() => {
-                                  onSelectProvince(prov.code);
-                                  handleSwitchTab('province');
-                                }}
-                                className="px-2.5 py-1 rounded bg-cyan-500/20 hover:bg-cyan-500 text-cyan-300 hover:text-slate-950 border border-cyan-500/40 transition-all font-bold text-[11px] flex items-center gap-1 mx-auto"
-                              >
-                                <span>İl Karnesi</span>
-                                <ChevronRight className="w-3 h-3" />
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* ========================================================= */}
-          {/* TAB 2: 81 İL KARNESİ (BİREYSEL İL DOSYASI)                 */}
-          {/* ========================================================= */}
-          {activeTab === 'province' && (
-            <>
-              {/* Province Region Banner */}
-              <div className="bg-[#091f42]/70 border border-cyan-500/30 p-3 rounded-xs flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <MapPin className="w-4 h-4 text-cyan-400" />
-                  <span className="text-xs text-slate-300">
-                    Bağlı Olduğu Düzey-2 Bölgesi: <strong className="text-amber-300">{provinceRegion.code} · {provinceRegion.agency} ({provinceRegion.shortCode})</strong>
-                  </span>
-                </div>
-                <button
-                  onClick={() => {
-                    if (onSelectRegion) onSelectRegion(provinceRegion.code);
-                    handleSwitchTab('region');
-                  }}
-                  className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-slate-950 border border-amber-500/40 transition-all text-xs font-bold font-['Rajdhani'] flex items-center gap-1"
-                >
-                  <Globe className="w-3.5 h-3.5" />
-                  <span>{provinceRegion.code} Bölge Karnesini Aç</span>
-                </button>
-              </div>
-
-              {/* Top KPI Cards Grid */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div className="bg-[#071d42]/70 border border-cyan-500/30 p-3 rounded-xs">
-                  <div className="flex items-center justify-between text-xs text-cyan-300/80 uppercase">
-                    <span>2025 Yıllık İhracat</span>
-                    <TrendingUp className="w-3.5 h-3.5 text-cyan-400" />
-                  </div>
-                  <div className="text-xl font-bold font-['Orbitron'] text-white mt-1">
-                    ${(provExportVal / 1e6).toFixed(1)}M
-                  </div>
-                  <div className="text-[10px] text-cyan-400/60 font-mono mt-0.5">
-                    ${provExportVal.toLocaleString('tr-TR')}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                    <div className="bg-[#040e24] p-2.5 rounded border border-cyan-500/10">
+                      <span className="text-slate-400 block mb-1">Toplam Sanayi Parseli</span>
+                      <span className="font-['Orbitron'] text-base font-bold text-cyan-200">
+                        {regionalData.totalOsb.parsels.toLocaleString('tr-TR')}
+                      </span>
+                      <span className="text-[10px] text-cyan-400/60 block mt-0.5 font-mono">Tahsisli & Boş Parseller</span>
+                    </div>
+                    <div className="bg-[#040e24] p-2.5 rounded border border-cyan-500/10">
+                      <span className="text-slate-400 block mb-1">Faaliyetteki / İşletmede</span>
+                      <span className="font-['Orbitron'] text-base font-bold text-emerald-400">
+                        {regionalData.totalOsb.isletmede} OSB
+                      </span>
+                      <span className="text-[10px] text-emerald-400/60 block mt-0.5 font-mono">Fiili Üretim Yapan</span>
+                    </div>
+                    <div className="bg-[#040e24] p-2.5 rounded border border-cyan-500/10">
+                      <span className="text-slate-400 block mb-1">Altyapı & Planlama Aşaması</span>
+                      <span className="font-['Orbitron'] text-base font-bold text-cyan-300">
+                        {regionalData.totalOsb.altyapi + regionalData.totalOsb.planlama} OSB
+                      </span>
+                      <span className="text-[10px] text-cyan-400/60 block mt-0.5 font-mono">Kamulaştırma: {regionalData.totalOsb.kamulastirma}</span>
+                    </div>
+                    <div className="bg-[#040e24] p-2.5 rounded border border-cyan-500/10">
+                      <span className="text-slate-400 block mb-1">Karma / İhtisas / TDİ Türü</span>
+                      <span className="font-['Orbitron'] text-base font-bold text-amber-300">
+                        {regionalData.totalOsb.karma} / {regionalData.totalOsb.ihtisas} / {regionalData.totalOsb.tdiosb}
+                      </span>
+                      <span className="text-[10px] text-amber-400/60 block mt-0.5 font-mono">Sektörel İhtisas Dağılımı</span>
+                    </div>
                   </div>
                 </div>
 
-                <div className="bg-[#071d42]/70 border border-cyan-500/30 p-3 rounded-xs">
-                  <div className="flex items-center justify-between text-xs text-cyan-300/80 uppercase">
-                    <span>Organize Sanayi (OSB)</span>
-                    <Factory className="w-3.5 h-3.5 text-cyan-400" />
-                  </div>
-                  <div className="text-xl font-bold font-['Orbitron'] text-white mt-1">
-                    {provOsb.count} <span className="text-xs text-cyan-300 font-normal">Bölge</span>
-                  </div>
-                  <div className="text-[10px] text-cyan-400/60 font-mono mt-0.5">
-                    {provOsb.areaHa.toLocaleString('tr-TR')} Hektar Alan
+                {/* Regional Socio-Demographics (Population-Weighted Averages) */}
+                <div className="bg-[#061736]/70 border border-cyan-500/20 p-4 rounded-xs">
+                  <h4 className="text-sm font-bold uppercase tracking-wider text-cyan-300 mb-3 flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <Building className="w-4 h-4 text-cyan-400" />
+                      Bölgesel Sosyo-Demografik ve Yaşam Endeksleri (Nüfus Ağırlıklı Ortalamalar)
+                    </span>
+                    <span className="text-xs font-mono text-cyan-400/80">
+                      Toplam Nüfus: {regionalData.totalPopulation.toLocaleString('tr-TR')}
+                    </span>
+                  </h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 text-xs">
+                    <div className="bg-[#040e24] p-2.5 rounded border border-cyan-500/10">
+                      <span className="text-slate-400 block text-[11px] mb-0.5">İstihdam Oranı</span>
+                      <span className="font-mono text-base font-bold text-white">%{regionalData.overview.employmentRate}</span>
+                      <span className="text-[10px] text-slate-400/70 block mt-0.5 font-mono">15+ Yaş İstihdam</span>
+                    </div>
+                    <div className="bg-[#040e24] p-2.5 rounded border border-cyan-500/10">
+                      <span className="text-slate-400 block text-[11px] mb-0.5">İşsizlik Oranı</span>
+                      <span className="font-mono text-base font-bold text-rose-400">%{regionalData.overview.unemploymentRate}</span>
+                      <span className="text-[10px] text-slate-400/70 block mt-0.5 font-mono">Bölgesel İşgücü</span>
+                    </div>
+                    <div className="bg-[#040e24] p-2.5 rounded border border-cyan-500/10">
+                      <span className="text-slate-400 block text-[11px] mb-0.5">Ort. Eğitim Süresi</span>
+                      <span className="font-mono text-base font-bold text-white">{regionalData.overview.avgEducationYears} Yıl</span>
+                      <span className="text-[10px] text-slate-400/70 block mt-0.5 font-mono">Örgün Eğitim Ort.</span>
+                    </div>
+                    <div className="bg-[#040e24] p-2.5 rounded border border-cyan-500/10">
+                      <span className="text-slate-400 block text-[11px] mb-0.5">SEGE Gelişmişlik</span>
+                      <span className="font-mono text-base font-bold text-amber-300">{regionalData.overview.sesScore} / 100</span>
+                      <span className="text-[10px] text-slate-400/70 block mt-0.5 font-mono">Sosyoekonomik Skoru</span>
+                    </div>
+                    <div className="bg-[#040e24] p-2.5 rounded border border-cyan-500/10">
+                      <span className="text-slate-400 block text-[11px] mb-0.5">Hastane Yatak / 100k</span>
+                      <span className="font-mono text-base font-bold text-emerald-400">{regionalData.overview.hospitalBedsPer100k} Yatak</span>
+                      <span className="text-[10px] text-slate-400/70 block mt-0.5 font-mono">Sağlık Kapasitesi</span>
+                    </div>
                   </div>
                 </div>
 
-                <div className="bg-[#071d42]/70 border border-cyan-500/30 p-3 rounded-xs">
-                  <div className="flex items-center justify-between text-xs text-cyan-300/80 uppercase">
-                    <span>Kadın İhracat Payı</span>
-                    <Award className="w-3.5 h-3.5 text-amber-400" />
-                  </div>
-                  <div className="text-xl font-bold font-['Orbitron'] text-white mt-1">
-                    %{provWomenShare.toFixed(1)}
-                  </div>
-                  <div className="text-[10px] text-cyan-400/60 font-mono mt-0.5">
-                    Kadın İstihdam & Yönetim Payı
-                  </div>
-                </div>
-
-                <div className="bg-[#071d42]/70 border border-cyan-500/30 p-3 rounded-xs">
-                  <div className="flex items-center justify-between text-xs text-cyan-300/80 uppercase">
-                    <span>Kişi Başı GSYH</span>
-                    <Users className="w-3.5 h-3.5 text-emerald-400" />
-                  </div>
-                  <div className="text-xl font-bold font-['Orbitron'] text-white mt-1">
-                    ${provStats.gdpPerCapitaUsd.toLocaleString('tr-TR')}
-                  </div>
-                  <div className="text-[10px] text-cyan-400/60 font-mono mt-0.5">
-                    Nüfus: {provStats.population.toLocaleString('tr-TR')}
-                  </div>
-                </div>
-              </div>
-
-              {/* OSB Breakdown Detail Table */}
-              <div className="bg-[#061736]/70 border border-cyan-500/20 p-4 rounded-xs">
-                <h4 className="text-sm font-bold uppercase tracking-wider text-cyan-300 mb-3 flex items-center gap-2">
-                  <Layers className="w-4 h-4 text-cyan-400" />
-                  Sanayi Bölgeleri (OSB) Fiili Durum ve Tür Dağılımı
-                </h4>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                  <div className="bg-[#040e24] p-2.5 rounded border border-cyan-500/10">
-                    <span className="text-slate-400 block mb-1">Toplam Parsel Sayısı</span>
-                    <span className="font-['Orbitron'] text-base font-bold text-cyan-200">{provOsb.parsels}</span>
-                  </div>
-                  <div className="bg-[#040e24] p-2.5 rounded border border-cyan-500/10">
-                    <span className="text-slate-400 block mb-1">Faaliyetteki / İşletmede</span>
-                    <span className="font-['Orbitron'] text-base font-bold text-emerald-400">{provOsb.isletmede} OSB</span>
-                  </div>
-                  <div className="bg-[#040e24] p-2.5 rounded border border-cyan-500/10">
-                    <span className="text-slate-400 block mb-1">Altyapı & Planlama</span>
-                    <span className="font-['Orbitron'] text-base font-bold text-cyan-300">{provOsb.altyapi + provOsb.planlama} OSB</span>
-                  </div>
-                  <div className="bg-[#040e24] p-2.5 rounded border border-cyan-500/10">
-                    <span className="text-slate-400 block mb-1">Karma / İhtisas / TDİ</span>
-                    <span className="font-['Orbitron'] text-base font-bold text-amber-300">
-                      {provOsb.karma} / {provOsb.ihtisas} / {provOsb.tdiosb}
+                {/* Member Provinces Comparison Table */}
+                <div className="bg-[#061736]/70 border border-cyan-500/20 p-4 rounded-xs">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-sm font-bold uppercase tracking-wider text-cyan-300 flex items-center gap-2">
+                      <BarChart3 className="w-4 h-4 text-cyan-400" />
+                      Bölge Kapsamındaki İllerin Performans ve Katkı Dağılımı ({regionalData.provinces.length} İl)
+                    </h4>
+                    <span className="text-[11px] text-slate-400 font-mono no-export">
+                      Bir ile tıklayarak il karnesine geçiş yapabilirsiniz
                     </span>
                   </div>
-                </div>
-              </div>
 
-              {/* Demographics & Public Infrastructure Indicators */}
-              <div className="bg-[#061736]/70 border border-cyan-500/20 p-4 rounded-xs">
-                <h4 className="text-sm font-bold uppercase tracking-wider text-cyan-300 mb-3 flex items-center gap-2">
-                  <Building className="w-4 h-4 text-cyan-400" />
-                  Sosyo-Demografik ve Altyapı Göstergeleri
-                </h4>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 text-xs">
-                  <div className="bg-[#040e24] p-2 rounded border border-cyan-500/10">
-                    <span className="text-slate-400 block text-[11px]">İstihdam Oranı</span>
-                    <span className="font-mono text-sm font-bold text-white">%{provStats.employmentRate}</span>
-                  </div>
-                  <div className="bg-[#040e24] p-2 rounded border border-cyan-500/10">
-                    <span className="text-slate-400 block text-[11px]">İşsizlik Oranı</span>
-                    <span className="font-mono text-sm font-bold text-rose-400">%{provStats.unemploymentRate}</span>
-                  </div>
-                  <div className="bg-[#040e24] p-2 rounded border border-cyan-500/10">
-                    <span className="text-slate-400 block text-[11px]">Ort. Eğitim Süresi</span>
-                    <span className="font-mono text-sm font-bold text-white">{provStats.avgEducationYears} Yıl</span>
-                  </div>
-                  <div className="bg-[#040e24] p-2 rounded border border-cyan-500/10">
-                    <span className="text-slate-400 block text-[11px]">SES Seviye Skoru</span>
-                    <span className="font-mono text-sm font-bold text-cyan-300">{provStats.sesScore} / 100</span>
-                  </div>
-                  <div className="bg-[#040e24] p-2 rounded border border-cyan-500/10">
-                    <span className="text-slate-400 block text-[11px]">Hastane Yatak / 100k</span>
-                    <span className="font-mono text-sm font-bold text-white">{provStats.hospitalBedsPer100k} Yatak</span>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs font-mono border-collapse">
+                      <thead>
+                        <tr className="border-b border-cyan-500/20 text-cyan-300/80 text-[11px] uppercase bg-[#040f28]">
+                          <th className="py-2 px-3">İl / Plaka</th>
+                          <th className="py-2 px-3 text-right">2025 İhracat</th>
+                          <th className="py-2 px-3 text-right">Bölge Payı</th>
+                          <th className="py-2 px-3 text-center">OSB (Faal)</th>
+                          <th className="py-2 px-3 text-right">Nüfus</th>
+                          <th className="py-2 px-3 text-right">GSYH / Kişi</th>
+                          <th className="py-2 px-3 text-center">SEGE Skoru</th>
+                          <th className="py-2 px-3 text-center no-export">İşlem</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-cyan-500/10">
+                        {regionalData.provinces.map((prov) => {
+                          const exportShare = regionalData.totalExport > 0 
+                            ? ((prov.export / regionalData.totalExport) * 100).toFixed(1) 
+                            : '0';
+                          const isCurrentProvince = prov.code === selectedProvinceCode;
+
+                          return (
+                            <tr 
+                              key={prov.code}
+                              className={`hover:bg-cyan-950/40 transition-colors ${
+                                isCurrentProvince ? 'bg-cyan-900/20 font-bold' : ''
+                              }`}
+                            >
+                              <td className="py-2.5 px-3">
+                                <div className="flex items-center gap-2">
+                                  <span className="w-5 h-5 rounded bg-cyan-950 border border-cyan-500/40 text-[10px] font-bold text-cyan-300 flex items-center justify-center shrink-0">
+                                    {prov.code}
+                                  </span>
+                                  <span className="font-['Rajdhani'] font-bold text-sm text-white">
+                                    {prov.name}
+                                  </span>
+                                  {isCurrentProvince && (
+                                    <span className="px-1.5 py-0.2 bg-cyan-500 text-slate-950 text-[9px] font-bold rounded">
+                                      SEÇİLİ
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="py-2.5 px-3 text-right font-bold text-amber-300">
+                                ${(prov.export / 1e6).toFixed(1)}M
+                              </td>
+                              <td className="py-2.5 px-3 text-right">
+                                <span className="px-1.5 py-0.5 rounded bg-amber-950/60 text-amber-200 border border-amber-500/30 text-[11px] font-bold">
+                                  %{exportShare}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 text-center text-cyan-200">
+                                {prov.osb.count} ({prov.osb.isletmede})
+                              </td>
+                              <td className="py-2.5 px-3 text-right text-slate-300">
+                                {prov.overview.population.toLocaleString('tr-TR')}
+                              </td>
+                              <td className="py-2.5 px-3 text-right text-emerald-400 font-bold">
+                                ${prov.overview.gdpPerCapitaUsd.toLocaleString('tr-TR')}
+                              </td>
+                              <td className="py-2.5 px-3 text-center text-cyan-300">
+                                {prov.overview.sesScore}
+                              </td>
+                              <td className="py-2.5 px-3 text-center no-export">
+                                <button
+                                  onClick={() => {
+                                    onSelectProvince(prov.code);
+                                    handleSwitchTab('province');
+                                  }}
+                                  className="px-2.5 py-1 rounded bg-cyan-500/20 hover:bg-cyan-500 text-cyan-300 hover:text-slate-950 border border-cyan-500/40 transition-all font-bold text-[11px] flex items-center gap-1 mx-auto"
+                                >
+                                  <span>İl Karnesi</span>
+                                  <ChevronRight className="w-3 h-3" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
-              </div>
-            </>
-          )}
+              </>
+            )}
 
+            {/* ========================================================= */}
+            {/* TAB 2: 81 İL KARNESİ (BİREYSEL İL DOSYASI)                 */}
+            {/* ========================================================= */}
+            {activeTab === 'province' && (
+              <>
+                {/* Province Region Banner */}
+                <div className="bg-[#091f42]/70 border border-cyan-500/30 p-3 rounded-xs flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-cyan-400" />
+                    <span className="text-xs text-slate-300">
+                      Bağlı Olduğu Düzey-2 Bölgesi: <strong className="text-amber-300">{provinceRegion.code} · {provinceRegion.agency} ({provinceRegion.shortCode})</strong>
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (onSelectRegion) onSelectRegion(provinceRegion.code);
+                      handleSwitchTab('region');
+                    }}
+                    className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-slate-950 border border-amber-500/40 transition-all text-xs font-bold font-['Rajdhani'] flex items-center gap-1 no-export"
+                  >
+                    <Globe className="w-3.5 h-3.5" />
+                    <span>{provinceRegion.code} Bölge Karnesini Aç</span>
+                  </button>
+                </div>
+
+                {/* Top KPI Cards Grid */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="bg-[#071d42]/70 border border-cyan-500/30 p-3 rounded-xs">
+                    <div className="flex items-center justify-between text-xs text-cyan-300/80 uppercase">
+                      <span>2025 Yıllık İhracat</span>
+                      <TrendingUp className="w-3.5 h-3.5 text-cyan-400" />
+                    </div>
+                    <div className="text-xl font-bold font-['Orbitron'] text-white mt-1">
+                      ${(provExportVal / 1e6).toFixed(1)}M
+                    </div>
+                    <div className="text-[10px] text-cyan-400/60 font-mono mt-0.5">
+                      ${provExportVal.toLocaleString('tr-TR')}
+                    </div>
+                  </div>
+
+                  <div className="bg-[#071d42]/70 border border-cyan-500/30 p-3 rounded-xs">
+                    <div className="flex items-center justify-between text-xs text-cyan-300/80 uppercase">
+                      <span>Organize Sanayi (OSB)</span>
+                      <Factory className="w-3.5 h-3.5 text-cyan-400" />
+                    </div>
+                    <div className="text-xl font-bold font-['Orbitron'] text-white mt-1">
+                      {provOsb.count} <span className="text-xs text-cyan-300 font-normal">Bölge</span>
+                    </div>
+                    <div className="text-[10px] text-cyan-400/60 font-mono mt-0.5">
+                      {provOsb.areaHa.toLocaleString('tr-TR')} Hektar Alan
+                    </div>
+                  </div>
+
+                  <div className="bg-[#071d42]/70 border border-cyan-500/30 p-3 rounded-xs">
+                    <div className="flex items-center justify-between text-xs text-cyan-300/80 uppercase">
+                      <span>Kadın İhracat Payı</span>
+                      <Award className="w-3.5 h-3.5 text-amber-400" />
+                    </div>
+                    <div className="text-xl font-bold font-['Orbitron'] text-white mt-1">
+                      %{provWomenShare.toFixed(1)}
+                    </div>
+                    <div className="text-[10px] text-cyan-400/60 font-mono mt-0.5">
+                      Kadın İstihdam & Yönetim Payı
+                    </div>
+                  </div>
+
+                  <div className="bg-[#071d42]/70 border border-cyan-500/30 p-3 rounded-xs">
+                    <div className="flex items-center justify-between text-xs text-cyan-300/80 uppercase">
+                      <span>Kişi Başı GSYH</span>
+                      <Users className="w-3.5 h-3.5 text-emerald-400" />
+                    </div>
+                    <div className="text-xl font-bold font-['Orbitron'] text-white mt-1">
+                      ${provStats.gdpPerCapitaUsd.toLocaleString('tr-TR')}
+                    </div>
+                    <div className="text-[10px] text-cyan-400/60 font-mono mt-0.5">
+                      Nüfus: {provStats.population.toLocaleString('tr-TR')}
+                    </div>
+                  </div>
+                </div>
+
+                {/* OSB Breakdown Detail Table */}
+                <div className="bg-[#061736]/70 border border-cyan-500/20 p-4 rounded-xs">
+                  <h4 className="text-sm font-bold uppercase tracking-wider text-cyan-300 mb-3 flex items-center gap-2">
+                    <Layers className="w-4 h-4 text-cyan-400" />
+                    Sanayi Bölgeleri (OSB) Fiili Durum ve Tür Dağılımı
+                  </h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                    <div className="bg-[#040e24] p-2.5 rounded border border-cyan-500/10">
+                      <span className="text-slate-400 block mb-1">Toplam Parsel Sayısı</span>
+                      <span className="font-['Orbitron'] text-base font-bold text-cyan-200">{provOsb.parsels}</span>
+                    </div>
+                    <div className="bg-[#040e24] p-2.5 rounded border border-cyan-500/10">
+                      <span className="text-slate-400 block mb-1">Faaliyetteki / İşletmede</span>
+                      <span className="font-['Orbitron'] text-base font-bold text-emerald-400">{provOsb.isletmede} OSB</span>
+                    </div>
+                    <div className="bg-[#040e24] p-2.5 rounded border border-cyan-500/10">
+                      <span className="text-slate-400 block mb-1">Altyapı & Planlama</span>
+                      <span className="font-['Orbitron'] text-base font-bold text-cyan-300">{provOsb.altyapi + provOsb.planlama} OSB</span>
+                    </div>
+                    <div className="bg-[#040e24] p-2.5 rounded border border-cyan-500/10">
+                      <span className="text-slate-400 block mb-1">Karma / İhtisas / TDİ</span>
+                      <span className="font-['Orbitron'] text-base font-bold text-amber-300">
+                        {provOsb.karma} / {provOsb.ihtisas} / {provOsb.tdiosb}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Demographics & Public Infrastructure Indicators */}
+                <div className="bg-[#061736]/70 border border-cyan-500/20 p-4 rounded-xs">
+                  <h4 className="text-sm font-bold uppercase tracking-wider text-cyan-300 mb-3 flex items-center gap-2">
+                    <Building className="w-4 h-4 text-cyan-400" />
+                    Sosyo-Demografik ve Altyapı Göstergeleri
+                  </h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 text-xs">
+                    <div className="bg-[#040e24] p-2 rounded border border-cyan-500/10">
+                      <span className="text-slate-400 block text-[11px]">İstihdam Oranı</span>
+                      <span className="font-mono text-sm font-bold text-white">%{provStats.employmentRate}</span>
+                    </div>
+                    <div className="bg-[#040e24] p-2 rounded border border-cyan-500/10">
+                      <span className="text-slate-400 block text-[11px]">İşsizlik Oranı</span>
+                      <span className="font-mono text-sm font-bold text-rose-400">%{provStats.unemploymentRate}</span>
+                    </div>
+                    <div className="bg-[#040e24] p-2 rounded border border-cyan-500/10">
+                      <span className="text-slate-400 block text-[11px]">Ort. Eğitim Süresi</span>
+                      <span className="font-mono text-sm font-bold text-white">{provStats.avgEducationYears} Yıl</span>
+                    </div>
+                    <div className="bg-[#040e24] p-2 rounded border border-cyan-500/10">
+                      <span className="text-slate-400 block text-[11px]">SES Seviye Skoru</span>
+                      <span className="font-mono text-sm font-bold text-cyan-300">{provStats.sesScore} / 100</span>
+                    </div>
+                    <div className="bg-[#040e24] p-2 rounded border border-cyan-500/10">
+                      <span className="text-slate-400 block text-[11px]">Hastane Yatak / 100k</span>
+                      <span className="font-mono text-sm font-bold text-white">{provStats.hospitalBedsPer100k} Yatak</span>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Official Report Footer Authentication (Included in exported PNG & PDF) */}
+            <div className="p-3 bg-[#030919] border border-cyan-500/20 rounded-xs flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono text-slate-400">
+              <div className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                <span>Veri Kaynakları: TÜİK Dış Ticaret & CIP · TİM · Sanayi ve Teknoloji Bakanlığı · OSBÜK</span>
+              </div>
+              <div className="text-cyan-400/80">
+                TÜRKİYE BÖLGESEL VERİ PORTALI v2.5 · RESMİ İNTİKAL BELGESİ
+              </div>
+            </div>
+
+          </div>
         </div>
 
-        {/* Modal Footer with Actions */}
-        <div className="px-4 sm:px-5 py-3 bg-[#030919] border-t border-cyan-500/20 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <span className="text-slate-400 font-mono text-[11px]">
-            Kaynaklar: TÜİK Dış Ticaret & CIP · Sanayi ve Teknoloji Bakanlığı · OSBÜK · Kalkınma Ajansları
-          </span>
+        {/* Modal Footer with Actions & Download Triggers */}
+        <div className="px-4 sm:px-5 py-3 bg-[#030919] border-t border-cyan-500/20 flex flex-wrap items-center justify-between gap-3 text-xs no-export">
+          <div className="flex items-center gap-2">
+            <span className="text-slate-400 font-mono text-[11px] hidden md:inline">
+              Karneleri anında indirebilirsiniz:
+            </span>
+            <button
+              onClick={() => handleDownload('png')}
+              disabled={isExporting !== null}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xs bg-[#081a3d] hover:bg-cyan-500 hover:text-slate-950 text-cyan-200 border border-cyan-500/40 font-bold font-['Rajdhani'] transition-all shadow-[0_0_10px_rgba(0,242,254,0.2)] disabled:opacity-50"
+            >
+              {isExporting === 'png' ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <ImageIcon className="w-3.5 h-3.5 text-cyan-400" />
+              )}
+              <span>{isExporting === 'png' ? exportMessage : 'PNG İndir (Resim)'}</span>
+            </button>
+
+            <button
+              onClick={() => handleDownload('pdf')}
+              disabled={isExporting !== null}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xs bg-rose-950/60 hover:bg-rose-600 hover:text-white text-rose-200 border border-rose-500/40 font-bold font-['Rajdhani'] transition-all shadow-[0_0_10px_rgba(244,63,94,0.2)] disabled:opacity-50"
+              title="A4 Standart Yazıcı Uyumlu (14mm Güvenli Kenar Boşluklu) PDF İndir"
+            >
+              {isExporting === 'pdf' ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <FileText className="w-3.5 h-3.5 text-rose-400" />
+              )}
+              <span>{isExporting === 'pdf' ? exportMessage : 'PDF İndir (A4 Yazıcı)'}</span>
+            </button>
+          </div>
+
           <div className="flex items-center gap-2">
             <button
               onClick={() => handleSwitchTab(activeTab === 'region' ? 'province' : 'region')}
@@ -863,7 +1089,7 @@ export const ProvinceDossierModal: React.FC<ProvinceDossierModalProps> = ({
                 activeTab === 'region' ? 'bg-amber-400 hover:bg-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.4)]' : 'bg-cyan-500 hover:bg-cyan-400 shadow-[0_0_12px_rgba(0,242,254,0.4)]'
               }`}
             >
-              Tamam / Paneli İncele
+              Tamam / Kapat
             </button>
           </div>
         </div>
