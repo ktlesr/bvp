@@ -29,6 +29,10 @@ interface HeaderProps {
   autoPlayStepTitle?: string;
   onOpenProvinceSearch: () => void;
   selectedProvinceName?: string;
+  mapLevel?: 'province' | 'region';
+  onMapLevelChange?: (level: 'province' | 'region') => void;
+  selectedRegionName?: string;
+  selectedRegionCode?: string;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -41,7 +45,11 @@ export const Header: React.FC<HeaderProps> = ({
   autoPlayProgress = 0,
   autoPlayStepTitle,
   onOpenProvinceSearch,
-  selectedProvinceName
+  selectedProvinceName,
+  mapLevel = 'province',
+  onMapLevelChange,
+  selectedRegionName,
+  selectedRegionCode
 }) => {
   const [timeStr, setTimeStr] = useState<string>('');
   const [dateStr, setDateStr] = useState<string>('');
@@ -93,15 +101,17 @@ export const Header: React.FC<HeaderProps> = ({
               <h1 className="font-['Orbitron'] font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-white via-cyan-100 to-cyan-400 text-sm md:text-lg uppercase drop-shadow-[0_0_12px_rgba(0,242,254,0.6)]">
                 TÜRKİYE BÖLGESEL VERİ PORTALI
               </h1>
-              <span className="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded-xs bg-cyan-950/80 border border-cyan-500/40 text-[9px] font-mono text-cyan-300">
-                SC-DATAV v2.5
+              <span className="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded-xs bg-cyan-950/80 border border-cyan-500/40 text-[9px] font-mono text-cyan-300 font-bold">
+                3D PORTAL v2.5
               </span>
             </div>
             <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono tracking-wider uppercase mt-0.5">
-              <span className="text-cyan-400 font-semibold">T.C. SANAYİ VE TEKNOLOJİ BAKANLIĞI</span>
+              <span className="text-cyan-400 font-semibold">81 İL</span>
               <span className="opacity-50">·</span>
-              <span className="hidden md:inline">KALKINMA AJANSLARI</span>
-              <span className="opacity-50 hidden md:inline">·</span>
+              <span className="text-cyan-400 font-semibold">26 İBBS-2 BÖLGESİ</span>
+              <span className="opacity-50">·</span>
+              <span className="text-slate-300">BÖLGESEL GÖSTERGELER</span>
+              <span className="opacity-50">·</span>
               <span className="text-emerald-400 font-bold inline-flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                 CANLI VERİ AKIŞI
@@ -110,17 +120,58 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Right Side: Province Dossier Quick Access, Tools, Kiosk, Clock */}
+        {/* Right Side: Province/Region Level Switch, Province/Region Name Dossier Button, AutoPlay, Theme, Clock */}
         <div className="flex items-center gap-2 md:gap-3 text-xs font-mono text-cyan-300/90">
-          {/* Quick Province Dossier Button */}
+          {/* HARİTA DÜZEYİ SEÇİM SWITCHİ (81 İL / 26 BÖLGE) */}
+          {onMapLevelChange && (
+            <div className="flex items-center p-0.5 rounded-xs bg-[#020712] border border-cyan-400/60 shadow-[0_0_12px_rgba(0,242,254,0.25)]">
+              <button
+                onClick={() => onMapLevelChange('province')}
+                className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 text-xs font-['Rajdhani'] font-bold rounded-xs transition-all ${
+                  mapLevel === 'province'
+                    ? 'bg-cyan-500 text-slate-950 shadow-[0_0_10px_#00f2fe] font-black'
+                    : 'text-slate-300 hover:text-white hover:bg-cyan-950/40'
+                }`}
+                title="81 İl Seviyesinde Gösterim (NUTS-3 Düzeyi)"
+              >
+                <MapPin className="w-3.5 h-3.5" />
+                <span>81 İL</span>
+              </button>
+
+              <button
+                onClick={() => onMapLevelChange('region')}
+                className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 text-xs font-['Rajdhani'] font-bold rounded-xs transition-all ${
+                  mapLevel === 'region'
+                    ? 'bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 shadow-[0_0_12px_#f59e0b] font-black'
+                    : 'text-amber-300/80 hover:text-amber-200 hover:bg-amber-950/40'
+                }`}
+                title="26 İBBS-2 Düzey 2 Seviyesinde Gösterim (Kalkınma Ajansları Bölgeleri)"
+              >
+                <Globe className="w-3.5 h-3.5" />
+                <span>26 BÖLGE</span>
+              </button>
+            </div>
+          )}
+
+          {/* Quick Province / Region Dossier Button with Active Name */}
           <button
             onClick={onOpenProvinceSearch}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xs bg-cyan-950/70 border border-cyan-400/60 hover:border-cyan-300 text-cyan-200 text-xs transition-all shadow-[0_0_12px_rgba(0,242,254,0.25)] hover:shadow-[0_0_16px_rgba(0,242,254,0.4)]"
-            title="81 İl Karnesi, Karşılaştırma ve Detaylı Arama"
+            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xs border text-xs transition-all ${
+              mapLevel === 'region'
+                ? 'bg-amber-950/70 border-amber-400/60 hover:border-amber-300 text-amber-200 shadow-[0_0_12px_rgba(245,158,11,0.25)] hover:shadow-[0_0_16px_rgba(245,158,11,0.4)]'
+                : 'bg-cyan-950/70 border-cyan-400/60 hover:border-cyan-300 text-cyan-200 shadow-[0_0_12px_rgba(0,242,254,0.25)] hover:shadow-[0_0_16px_rgba(0,242,254,0.4)]'
+            }`}
+            title={mapLevel === 'region' ? '26 Bölge Karnesi, Agregat İstatistikler ve İlleri İncele' : '81 İl Karnesi, Karşılaştırma ve Detaylı Arama'}
           >
-            <MapPin className="w-3.5 h-3.5 text-cyan-400 animate-bounce" />
-            <span className="font-['Rajdhani'] font-bold tracking-wider">
-              {selectedProvinceName ? selectedProvinceName.toUpperCase() : 'İL DETAY'}
+            {mapLevel === 'region' ? (
+              <Globe className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+            ) : (
+              <MapPin className="w-3.5 h-3.5 text-cyan-400 animate-bounce" />
+            )}
+            <span className="font-['Rajdhani'] font-bold tracking-wider max-w-[120px] sm:max-w-[160px] truncate">
+              {mapLevel === 'region'
+                ? (selectedRegionCode ? `${selectedRegionCode} BÖLGE KARNESİ` : 'BÖLGE KARNESİ')
+                : (selectedProvinceName ? `${selectedProvinceName.toUpperCase()} KARNESİ` : 'İL KARNESİ')}
             </span>
           </button>
 
@@ -179,7 +230,7 @@ export const Header: React.FC<HeaderProps> = ({
               <option value="cyber-blue" className="bg-[#040e20] text-cyan-300">Siber Mavi</option>
               <option value="gold-titanium" className="bg-[#181105] text-amber-400">Kehribar Altın</option>
               <option value="emerald-tech" className="bg-[#031c11] text-emerald-400">Neon Zümrüt</option>
-              <option value="crimson-command" className="bg-[#1f0610] text-rose-400">Kızıl Komuta</option>
+              <option value="crimson-command" className="bg-[#1f0610] text-rose-400">Kızıl Taktik</option>
             </select>
           </div>
 

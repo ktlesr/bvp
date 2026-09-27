@@ -16,7 +16,7 @@ export interface ThemeColors {
 export const THEMES: Record<ThemeMode, ThemeColors> = {
   'cyber-blue': {
     id: 'cyber-blue',
-    name: 'Cyber Blue (Klasik DataV)',
+    name: 'Cyber Blue (Klasik Siber)',
     primary: '#00f2fe',
     primaryGlow: 'rgba(0, 242, 254, 0.4)',
     accent: '#4facfe',

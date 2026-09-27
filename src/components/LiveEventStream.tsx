@@ -12,9 +12,9 @@ interface EventItem {
 const INITIAL_EVENTS: EventItem[] = [
   { id: '1', time: '14:28:10', source: 'TÜİK Dış Ticaret', title: 'İstanbul 2025 yılı ihracat hacmi 131.2 Milyar $ seviyesini aştı.', type: 'trade' },
   { id: '2', time: '14:26:45', source: 'OSBÜK Analitik', title: 'Kocaeli ve Bursa sanayi OSB parsel doluluk oranı %96.4 olarak kaydedildi.', type: 'osb' },
-  { id: '3', time: '14:22:18', source: 'Bölgesel Kalkınma', title: 'İzmir ve Manisa kadın ihracat payında Ege bölgesi öncüsü konumunu koruyor.', type: 'women' },
-  { id: '4', time: '14:18:02', source: 'İpekyolu Ajansı', title: 'Gaziantep sanayi ihracatı 10.7 Milyar $ ile bölge lokomotifi oldu.', type: 'agency' },
-  { id: '5', time: '14:12:30', source: 'Sanayi Bakanlığı', title: 'Türkiye geneli 418 OSB içinde 276 OSB tam kapasite faaliyette.', type: 'osb' },
+  { id: '3', time: '14:22:18', source: 'Bölgesel Analiz', title: 'İzmir ve Manisa kadın ihracat payında Ege bölgesi öncüsü konumunu koruyor.', type: 'women' },
+  { id: '4', time: '14:18:02', source: 'İpekyolu Bölgesi', title: 'Gaziantep sanayi ihracatı 10.7 Milyar $ ile bölge lokomotifi oldu.', type: 'agency' },
+  { id: '5', time: '14:12:30', source: 'OSB Portalı', title: 'Türkiye geneli 418 OSB içinde 276 OSB tam kapasite faaliyette.', type: 'osb' },
   { id: '6', time: '14:05:14', source: 'TÜİK CIP', title: 'Kişi başı elektrik tüketimi ve altyapı şebekesi kapsama oranı %99.2.', type: 'trade' }
 ];
 

@@ -54,3 +54,41 @@ export const PROVINCE_TO_CODE: Record<string, string> = Object.entries(PROVINCE_
   },
   {} as Record<string, string>
 );
+
+export const REGION_CODES: Record<string, string> = {
+  TR10: "İstanbul",
+  TR21: "Tekirdağ, Edirne, Kırklareli",
+  TR22: "Balıkesir, Çanakkale",
+  TR31: "İzmir",
+  TR32: "Aydın, Denizli, Muğla",
+  TR33: "Manisa, Afyonkarahisar, Kütahya, Uşak",
+  TR41: "Bursa, Eskişehir, Bilecik",
+  TR42: "Kocaeli, Sakarya, Düzce, Bolu, Yalova",
+  TR51: "Ankara",
+  TR52: "Konya, Karaman",
+  TR61: "Antalya, Isparta, Burdur",
+  TR62: "Adana, Mersin",
+  TR63: "Hatay, Kahramanmaraş, Osmaniye",
+  TR71: "Kırıkkale, Aksaray, Niğde, Nevşehir, Kırşehir",
+  TR72: "Kayseri, Sivas, Yozgat",
+  TR81: "Zonguldak, Karabük, Bartın",
+  TR82: "Kastamonu, Çankırı, Sinop",
+  TR83: "Samsun, Tokat, Çorum, Amasya",
+  TR90: "Trabzon, Ordu, Giresun, Rize, Artvin, Gümüşhane",
+  TRA1: "Erzurum, Erzincan, Bayburt",
+  TRA2: "Ağrı, Kars, Iğdır, Ardahan",
+  TRB1: "Malatya, Elazığ, Bingöl, Tunceli",
+  TRB2: "Van, Muş, Bitlis, Hakkâri",
+  TRC1: "Gaziantep, Adıyaman, Kilis",
+  TRC2: "Şanlıurfa, Diyarbakır",
+  TRC3: "Mardin, Batman, Şırnak, Siirt"
+};
+
+export function getRegionByCode(code: string): RegionAgency | undefined {
+  return REGIONS.find((r) => r.code === code);
+}
+
+export function getRegionForProvince(provinceCodeOrName: string): RegionAgency | undefined {
+  const provName = PROVINCE_CODES[provinceCodeOrName] || provinceCodeOrName;
+  return REGIONS.find((r) => r.provinces.some((p) => p.toLowerCase() === provName.toLowerCase()));
+}

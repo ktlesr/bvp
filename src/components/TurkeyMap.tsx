@@ -423,11 +423,6 @@ export const TurkeyMap: React.FC<TurkeyMapProps> = ({
             <MapPin className="w-3 h-3 text-cyan-400" />
             <span>{hoveredProvince.name}</span>
             <span className="text-cyan-400 text-[10px] font-mono">({hoveredProvince.code})</span>
-            {hoveredProvince.agency && (
-              <span className="ml-1 text-[9px] px-1 py-0.2 bg-cyan-950 text-cyan-300 border border-cyan-500/40">
-                {hoveredProvince.agency}
-              </span>
-            )}
           </div>
           <div className="mt-1 text-sm font-['Orbitron'] font-bold text-cyan-200">
             {formatMetricVal(hoveredProvince.value)}

@@ -11,7 +11,7 @@ import {
 import { 
   TurkeyMap3D as TurkeyMap 
 } from './components/TurkeyMap3D';
-import { MapMetricType, getMetricTitle, computeProvinceMetric } from './data/metricCatalog';
+import { MapMetricType, getMetricTitle, computeProvinceMetric, computeRegionMetric } from './data/metricCatalog';
 import { RankingList } from './components/RankingList';
 import { TrendChart } from './components/TrendChart';
 import { CompositionChart } from './components/CompositionChart';
@@ -19,7 +19,7 @@ import { RadarPerformanceChart } from './components/RadarPerformanceChart';
 import { LiveEventStream } from './components/LiveEventStream';
 import { ProvinceDossierModal } from './components/ProvinceDossierModal';
 import { ThemeMode } from './utils/theme';
-import { PROVINCE_CODES, REGIONS } from './data/regions';
+import { PROVINCE_CODES, REGIONS, REGION_CODES, PROVINCE_TO_CODE, getRegionForProvince, getRegionByCode } from './data/regions';
 import { getProvinceExport } from './data/tradeData';
 import { getProvinceOSB } from './data/osbData';
 import { getWomenShare } from './data/womenTradeData';
@@ -66,6 +66,8 @@ function getTopLeaderCode(metric: MapMetricType): string {
 export default function App() {
   const [currentMode, setCurrentMode] = useState<DashboardMode>('trade');
   const [selectedProvinceCode, setSelectedProvinceCode] = useState<string>('34'); // Default Istanbul
+  const [mapLevel, setMapLevel] = useState<'province' | 'region'>('province');
+  const [selectedRegionCode, setSelectedRegionCode] = useState<string>('TR10');
   const [activeMetric, setActiveMetric] = useState<MapMetricType>('export');
   const [activeTheme, setActiveTheme] = useState<ThemeMode>('cyber-blue');
   const [isAutoPlay, setIsAutoPlay] = useState<boolean>(false);
@@ -139,6 +141,7 @@ export default function App() {
 
   const selectedName = PROVINCE_CODES[selectedProvinceCode] || 'ADANA';
   const selectedRegion = REGIONS.find((r) => r.provinces.some((p) => p.toLowerCase() === selectedName.toLowerCase()));
+  const activeRegion = REGIONS.find((r) => r.code === selectedRegionCode) || selectedRegion || REGIONS[0];
 
   // Active statistics for selected province
   const currentExp = getProvinceExport(selectedProvinceCode, 3); // 2025
@@ -177,7 +180,7 @@ export default function App() {
         }}
       />
 
-      {/* 1. SC-DataV Top Header */}
+      {/* 1. Regional 3D Top Header */}
       <Header
         currentMode={currentMode}
         onModeChange={(m) => {
@@ -195,6 +198,10 @@ export default function App() {
         autoPlayStepTitle={KIOSK_STEPS[kioskStepIdx]?.label}
         onOpenProvinceSearch={() => setIsDossierOpen(true)}
         selectedProvinceName={selectedName}
+        mapLevel={mapLevel}
+        onMapLevelChange={setMapLevel}
+        selectedRegionName={REGION_CODES[activeRegion?.code] || activeRegion?.agency}
+        selectedRegionCode={activeRegion?.code}
       />
 
       {/* 2. Top Summary KPI Numbers Bar */}
@@ -241,17 +248,24 @@ export default function App() {
         
         {/* Left Column: Leaderboard & Composition (Scales smoothly: 240px -> 280px -> 320px) */}
         <div className="w-full lg:w-[240px] xl:w-[280px] 2xl:w-[320px] shrink-0 flex flex-col gap-3 transition-all duration-300 ease-in-out">
-          {/* Box 1: Top Provinces Leaderboard */}
+          {/* Box 1: Top Provinces / Regions Leaderboard */}
           <BorderBox
             title={getMetricTitle(activeMetric)}
-            subtitle="İLK 8 İL"
-            badge="CANLI SIRALAMA"
+            subtitle={mapLevel === 'region' ? "İLK 8 İBBS-2 BÖLGE" : "İLK 8 İL"}
+            badge={mapLevel === 'region' ? "26 BÖLGE" : "CANLI SIRALAMA"}
             className="flex-1 min-h-[300px]"
           >
             <RankingList
               activeMetric={activeMetric}
               selectedProvinceCode={selectedProvinceCode}
-              onSelectProvince={(code) => setSelectedProvinceCode(code)}
+              onSelectProvince={(code) => {
+                setSelectedProvinceCode(code);
+                const reg = getRegionForProvince(code);
+                if (reg) setSelectedRegionCode(reg.code);
+              }}
+              mapLevel={mapLevel}
+              selectedRegionCode={selectedRegionCode}
+              onSelectRegion={setSelectedRegionCode}
             />
           </BorderBox>
 
@@ -272,7 +286,22 @@ export default function App() {
           <div className="flex-1 min-h-[480px] xl:min-h-[540px] 2xl:min-h-[620px] flex flex-col">
             <TurkeyMap
               selectedProvinceCode={selectedProvinceCode}
-              onSelectProvince={(code) => setSelectedProvinceCode(code)}
+              onSelectProvince={(code) => {
+                setSelectedProvinceCode(code);
+                const reg = getRegionForProvince(code);
+                if (reg) setSelectedRegionCode(reg.code);
+              }}
+              selectedRegionCode={selectedRegionCode}
+              onSelectRegion={(regCode) => {
+                setSelectedRegionCode(regCode);
+                const reg = getRegionByCode(regCode);
+                if (reg && reg.provinces[0]) {
+                  const pCode = PROVINCE_TO_CODE[reg.provinces[0]];
+                  if (pCode) setSelectedProvinceCode(pCode);
+                }
+              }}
+              mapLevel={mapLevel}
+              onMapLevelChange={setMapLevel}
               activeMetric={activeMetric}
               onMetricChange={setActiveMetric}
               currentMode={currentMode}
@@ -284,37 +313,74 @@ export default function App() {
             />
           </div>
 
-          {/* Center Bottom: Quick Selected Province Highlight Bar */}
+          {/* Center Bottom: Quick Selected Province / Region Highlight Bar */}
           <div className="bg-[#05132d]/85 backdrop-blur-md border border-cyan-500/30 p-2.5 rounded-xs flex flex-wrap items-center justify-between gap-3 text-xs">
             <div className="flex items-center gap-3">
-              <span className="w-2.5 h-6 bg-cyan-400 rounded-xs shadow-[0_0_10px_#00f2fe]" />
+              <span className={`w-2.5 h-6 ${mapLevel === 'region' ? 'bg-amber-400 shadow-[0_0_10px_#f59e0b]' : 'bg-cyan-400 shadow-[0_0_10px_#00f2fe]'} rounded-xs`} />
               <div>
                 <div className="flex items-center gap-2">
                   <span className="font-['Orbitron'] font-bold text-base text-white tracking-wider">
-                    {selectedName.toUpperCase()}
+                    {mapLevel === 'region' && activeRegion
+                      ? `${activeRegion.shortCode} · ${activeRegion.level1Name.toUpperCase()}`
+                      : selectedName.toUpperCase()}
                   </span>
                   <span className="font-mono text-cyan-400 text-xs font-semibold">
-                    (Plaka: {selectedProvinceCode})
+                    {mapLevel === 'region' && activeRegion
+                      ? `(${activeRegion.code})`
+                      : `(Plaka: ${selectedProvinceCode})`}
                   </span>
-                  {selectedRegion && (
+                  {activeRegion && (
                     <span className="text-[10px] font-mono px-2 py-0.5 bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 rounded-xs">
-                      {selectedRegion.agency}
+                      {activeRegion.agency}
                     </span>
                   )}
                 </div>
                 <div className="text-[11px] text-slate-300/80 font-mono mt-0.5">
-                  2025 İhracat: <strong className="text-cyan-200">${(currentExp / 1e6).toFixed(1)}M</strong> · OSB: <strong className="text-cyan-200">{currentOsb.count} Adet</strong> ({currentOsb.isletmede} Faal) · Kadın Payı: <strong className="text-cyan-200">%{currentWomenShare.toFixed(1)}</strong>
+                  {mapLevel === 'region' && activeRegion ? (
+                    <>
+                      Kapsam: <strong className="text-cyan-200">{activeRegion.provinces.join(', ')}</strong> · 
+                      2025 Bölge İhracatı: <strong className="text-amber-300">${(computeRegionMetric(activeRegion.code, 'export') / 1e6).toFixed(1)}M</strong> · 
+                      OSB: <strong className="text-cyan-200">{computeRegionMetric(activeRegion.code, 'osb')} Adet</strong> · 
+                      Kadın Payı: <strong className="text-cyan-200">%{computeRegionMetric(activeRegion.code, 'women').toFixed(1)}</strong>
+                    </>
+                  ) : (
+                    <>
+                      2025 İhracat: <strong className="text-cyan-200">${(currentExp / 1e6).toFixed(1)}M</strong> · OSB: <strong className="text-cyan-200">{currentOsb.count} Adet</strong> ({currentOsb.isletmede} Faal) · Kadın Payı: <strong className="text-cyan-200">%{currentWomenShare.toFixed(1)}</strong>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
 
-            <button
-              onClick={() => setIsDossierOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-500 text-slate-950 font-['Rajdhani'] font-bold text-xs uppercase tracking-wider rounded-xs hover:bg-cyan-400 transition-colors shadow-[0_0_12px_rgba(0,242,254,0.4)]"
-            >
-              <span>İL DOSYASINI AÇ</span>
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
+            <div className="flex items-center gap-2">
+              {/* Level switch button in bottom bar */}
+              <div className="flex items-center bg-[#071738] p-0.5 rounded border border-cyan-500/30 font-mono text-[10px]">
+                <button
+                  onClick={() => setMapLevel('province')}
+                  className={`px-2 py-1 rounded-xs transition-colors ${mapLevel === 'province' ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'}`}
+                >
+                  81 İL
+                </button>
+                <button
+                  onClick={() => setMapLevel('region')}
+                  className={`px-2 py-1 rounded-xs transition-colors ${mapLevel === 'region' ? 'bg-amber-400 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'}`}
+                >
+                  26 BÖLGE
+                </button>
+              </div>
+
+              <button
+                onClick={() => setIsDossierOpen(true)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 font-['Rajdhani'] font-bold text-xs uppercase tracking-wider rounded-xs transition-all shadow-lg ${
+                  mapLevel === 'region'
+                    ? 'bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 shadow-[0_0_12px_rgba(245,158,11,0.4)]'
+                    : 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-[0_0_12px_rgba(0,242,254,0.4)]'
+                }`}
+              >
+                <span>{mapLevel === 'region' ? 'BÖLGE KARNESİNİ AÇ' : 'İL KARNESİNİ AÇ'}</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -352,15 +418,15 @@ export default function App() {
         </div>
       </main>
 
-      {/* 4. Bottom Footer Agency Regional Ticker */}
+      {/* 4. Bottom Footer Regional Ticker */}
       <footer className="px-3 md:px-6 py-2 border-t border-cyan-500/15 bg-[#030919]/90 z-20 flex flex-wrap items-center justify-between text-[11px] font-mono text-cyan-400/80">
         <div className="flex items-center gap-2">
           <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping" />
-          <span className="font-bold text-slate-300">26 KALKINMA AJANSI BÖLGESİ (NUTS-2):</span>
+          <span className="font-bold text-slate-300">26 İBBS-2 BÖLGESİ (NUTS-2):</span>
           <div className="hidden xl:flex items-center gap-2 text-cyan-300/60 overflow-hidden">
             {REGIONS.slice(0, 10).map((r) => (
               <span key={r.code} className="hover:text-cyan-200 transition-colors">
-                {r.shortCode}
+                {r.code} ({r.level1Name})
               </span>
             ))}
             <span>...</span>
@@ -370,16 +436,20 @@ export default function App() {
         <div className="flex items-center gap-3 text-slate-400">
           <span>Kaynak: TÜİK Dış Ticaret & CIP · OSBÜK</span>
           <span>·</span>
-          <span className="text-cyan-400/90 font-bold">SC-DATAV v2.0 ARCHITECTURE</span>
+          <span className="text-cyan-400/90 font-bold">3D PORTAL v2.5 ARCHITECTURE</span>
         </div>
       </footer>
 
-      {/* 5. Detailed 81-Province Dossier Modal */}
+      {/* 5. Detailed 81-Province / 26-Region Dossier Modal */}
       <ProvinceDossierModal
         isOpen={isDossierOpen}
         onClose={() => setIsDossierOpen(false)}
         selectedProvinceCode={selectedProvinceCode}
         onSelectProvince={(code) => setSelectedProvinceCode(code)}
+        selectedRegionCode={selectedRegionCode}
+        onSelectRegion={(code) => setSelectedRegionCode(code)}
+        mapLevel={mapLevel}
+        onMapLevelChange={setMapLevel}
       />
     </div>
   );

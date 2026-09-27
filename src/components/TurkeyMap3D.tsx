@@ -24,14 +24,17 @@ import {
   Move,
   HelpCircle,
   X,
-  Hand
+  Hand,
+  MapPin
 } from 'lucide-react';
 import defaultGeoData from '../data/nuts3.geo.json';
-import { PROVINCE_CODES, REGIONS } from '../data/regions';
+import nuts2GeoData from '../data/nuts2.geo.json';
+import { PROVINCE_CODES, REGIONS, REGION_CODES, getRegionByCode, PROVINCE_TO_CODE } from '../data/regions';
 import { 
   MapMetricType, 
   METRIC_CATALOG, 
   computeProvinceMetric, 
+  computeRegionMetric,
   getCategoryLabel, 
   formatMetricDisplay 
 } from '../data/metricCatalog';
@@ -40,14 +43,18 @@ import { DashboardMode } from './Header';
 import { ThemeMode } from '../utils/theme';
 
 export type { MapMetricType };
-export { computeProvinceMetric };
+export { computeProvinceMetric, computeRegionMetric };
 
-// Light-color themes specifically for the 3D outer extrude pedestal walls
-export type ExtrudeWallColorType = 'white' | 'silver' | 'marble' | 'ice';
+// Color themes specifically for the 3D outer extrude pedestal walls
+export type ExtrudeWallColorType = 'obsidian' | 'cyber' | 'silver' | 'marble' | 'white';
 
 interface TurkeyMap3DProps {
   selectedProvinceCode: string;
   onSelectProvince: (code: string) => void;
+  selectedRegionCode?: string;
+  onSelectRegion?: (code: string) => void;
+  mapLevel?: 'province' | 'region';
+  onMapLevelChange?: (level: 'province' | 'region') => void;
   activeMetric: MapMetricType;
   onMetricChange?: (metric: MapMetricType) => void;
   currentMode?: DashboardMode;
@@ -93,6 +100,28 @@ if (defaultGeoData && (defaultGeoData as any).features) {
       let sumLon = 0, sumLat = 0;
       coords.forEach((pt: number[]) => { sumLon += pt[0]; sumLat += pt[1]; });
       PROVINCE_CENTROIDS[code] = [sumLon / coords.length, sumLat / coords.length];
+    }
+  });
+}
+
+// Precompute centroids for all 26 NUTS-2 (İBBS-2) regions
+const REGION_CENTROIDS: Record<string, [number, number]> = {};
+if (nuts2GeoData && (nuts2GeoData as any).features) {
+  (nuts2GeoData as any).features.forEach((f: any) => {
+    const code = String(f.properties.bolgeKodu || f.properties.duzeyKodu);
+    const geomType = f.geometry.type;
+    let allPts: number[][] = [];
+    if (geomType === 'Polygon') {
+      allPts = f.geometry.coordinates[0] || [];
+    } else if (geomType === 'MultiPolygon') {
+      f.geometry.coordinates.forEach((poly: any) => {
+        if (poly && poly[0]) allPts.push(...poly[0]);
+      });
+    }
+    if (allPts.length > 0) {
+      let sumLon = 0, sumLat = 0;
+      allPts.forEach((pt: number[]) => { sumLon += pt[0]; sumLat += pt[1]; });
+      REGION_CENTROIDS[code] = [sumLon / allPts.length, sumLat / allPts.length];
     }
   });
 }
@@ -150,7 +179,7 @@ export const BILLBOARD_STYLE_OPTIONS: BillboardStyleOption[] = [
     id: 'classic',
     label: 'Klasik Siber HUD',
     badge: 'KORUNAN STANDART',
-    desc: 'Orijinal DataV kartı, ince silindir ışık demeti ve sade neon zemin halkası',
+    desc: 'Orijinal siber HUD kartı, ince silindir ışık demeti ve sade neon zemin halkası',
     preview: 'Klasik siber sütun & zemin halkası'
   },
   {
@@ -162,7 +191,7 @@ export const BILLBOARD_STYLE_OPTIONS: BillboardStyleOption[] = [
   },
   {
     id: 'terminal',
-    label: 'Taktik Komuta Terminali',
+    label: 'Taktik Siber Terminal',
     badge: 'EXECUTIVE TACTICAL',
     desc: '6 köşeli stealth prizma pilon, çift lazer kılavuz rayı ve altıgen taktik hedefleme pedi',
     preview: 'Altıgen hedefleme pedi & prizma pilon'
@@ -187,36 +216,36 @@ function createCyberBillboardTexture(
 
   const theme = {
     gold: {
-      primary: '#f59e0b',
-      badgeBg: '#fbbf24',
-      badgeText: '#0f172a',
-      border: 'rgba(251, 191, 36, 0.95)',
-      glow: 'rgba(251, 191, 36, 0.55)',
-      bg: 'rgba(15, 23, 42, 0.96)'
+      primary: '#fbbf24',
+      badgeBg: '#f59e0b',
+      badgeText: '#000000',
+      border: '#fbbf24',
+      glow: 'rgba(251, 191, 36, 0.90)',
+      bg: '#040d1e'
     },
     cyan: {
       primary: '#00f2fe',
       badgeBg: '#00f2fe',
-      badgeText: '#0f172a',
-      border: 'rgba(0, 242, 254, 0.95)',
-      glow: 'rgba(0, 242, 254, 0.55)',
-      bg: 'rgba(15, 23, 42, 0.96)'
+      badgeText: '#010816',
+      border: '#00f2fe',
+      glow: 'rgba(0, 242, 254, 0.90)',
+      bg: '#040d1e'
     },
     emerald: {
       primary: '#10b981',
       badgeBg: '#10b981',
-      badgeText: '#0f172a',
-      border: 'rgba(16, 185, 129, 0.95)',
-      glow: 'rgba(16, 185, 129, 0.55)',
-      bg: 'rgba(15, 23, 42, 0.96)'
+      badgeText: '#010816',
+      border: '#10b981',
+      glow: 'rgba(16, 185, 129, 0.90)',
+      bg: '#040d1e'
     },
     blue: {
       primary: '#38bdf8',
       badgeBg: '#38bdf8',
-      badgeText: '#0f172a',
-      border: 'rgba(56, 189, 248, 0.90)',
-      glow: 'rgba(56, 189, 248, 0.45)',
-      bg: 'rgba(15, 23, 42, 0.94)'
+      badgeText: '#010816',
+      border: '#38bdf8',
+      glow: 'rgba(56, 189, 248, 0.85)',
+      bg: '#040d1e'
     }
   }[colorScheme];
 
@@ -232,14 +261,19 @@ function createCyberBillboardTexture(
     // =========================================================================
     const radius = 30;
 
-    // 1. Frosted Glass Capsule Background
+    // 1. Frosted Glass Capsule Background (100% Solid Obsidian Foundation)
+    ctx.fillStyle = '#020713';
+    ctx.beginPath();
+    ctx.roundRect(pad, pad, innerW, innerH, radius);
+    ctx.fill();
+
     ctx.save();
     ctx.shadowColor = theme.glow;
-    ctx.shadowBlur = 18;
+    ctx.shadowBlur = 20;
     const bgGrad = ctx.createLinearGradient(pad, pad, pad + innerW, pad + innerH);
-    bgGrad.addColorStop(0, 'rgba(8, 26, 56, 0.95)');
-    bgGrad.addColorStop(0.5, 'rgba(4, 15, 36, 0.97)');
-    bgGrad.addColorStop(1, 'rgba(2, 8, 20, 0.99)');
+    bgGrad.addColorStop(0, '#0a2147');
+    bgGrad.addColorStop(0.5, '#041026');
+    bgGrad.addColorStop(1, '#020713');
     ctx.fillStyle = bgGrad;
     ctx.beginPath();
     ctx.roundRect(pad, pad, innerW, innerH, radius);
@@ -388,13 +422,19 @@ function createCyberBillboardTexture(
       ctx.closePath();
     };
 
+    // 100% Solid Obsidian Foundation
+    ctx.fillStyle = '#020610';
+    makeChamferPath();
+    ctx.fill();
+
     // Shadowed Background
     ctx.save();
     ctx.shadowColor = theme.glow;
-    ctx.shadowBlur = 18;
+    ctx.shadowBlur = 20;
     const bgGrad = ctx.createLinearGradient(pad, pad, pad, pad + innerH);
-    bgGrad.addColorStop(0, 'rgba(14, 20, 34, 0.98)');
-    bgGrad.addColorStop(1, 'rgba(4, 8, 16, 0.99)');
+    bgGrad.addColorStop(0, '#11192d');
+    bgGrad.addColorStop(0.5, '#070d1a');
+    bgGrad.addColorStop(1, '#020610');
     ctx.fillStyle = bgGrad;
     makeChamferPath();
     ctx.fill();
@@ -503,27 +543,39 @@ function createCyberBillboardTexture(
     // =========================================================================
     // STYLE 1: KLASİK SİBER HUD (KULLANICININ KORUNAN ORİJİNAL TASARIMI)
     // =========================================================================
-    // 1. Shadowed Card Background
+    // 1. Solid Pure Obsidian Card Background (100% opaque, high contrast, zero washed-out fading)
+    ctx.fillStyle = '#020713';
+    ctx.beginPath();
+    ctx.roundRect(pad, pad, innerW, innerH, 8);
+    ctx.fill();
+
     ctx.save();
     ctx.shadowColor = theme.glow;
-    ctx.shadowBlur = 16;
-    ctx.fillStyle = theme.bg;
+    ctx.shadowBlur = 22;
+    const bgGrad = ctx.createLinearGradient(pad, pad, pad, pad + innerH);
+    bgGrad.addColorStop(0, '#081a38');
+    bgGrad.addColorStop(0.35, '#030c1e');
+    bgGrad.addColorStop(1, '#020612');
+    ctx.fillStyle = bgGrad;
     ctx.beginPath();
     ctx.roundRect(pad, pad, innerW, innerH, 8);
     ctx.fill();
     ctx.restore();
 
-    // 2. High-Tech Dual Border
+    // 2. High-Tech Neon Border
     ctx.strokeStyle = theme.border;
-    ctx.lineWidth = 2.5;
+    ctx.lineWidth = 3.2;
     ctx.beginPath();
     ctx.roundRect(pad, pad, innerW, innerH, 8);
     ctx.stroke();
 
-    // 3. Cyber HUD Corner Brackets
-    const brk = 14;
+    // 3. Cyber HUD Corner Brackets - sharp pure white with glow
+    const brk = 16;
+    ctx.save();
+    ctx.shadowColor = theme.glow;
+    ctx.shadowBlur = 12;
     ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 2.5;
+    ctx.lineWidth = 3.2;
     ctx.beginPath();
     ctx.moveTo(pad - 1, pad + brk);
     ctx.lineTo(pad - 1, pad - 1);
@@ -544,29 +596,34 @@ function createCyberBillboardTexture(
     ctx.lineTo(w - pad + 1, h - pad + 1);
     ctx.lineTo(w - pad + 1, h - pad - brk);
     ctx.stroke();
+    ctx.restore();
 
     // 4. Header Bar
     const rankStr = rank < 10 ? `#0${rank}` : `#${rank}`;
-    const badgeW = 66;
+    const badgeW = 68;
     const badgeH = 32;
     const badgeX = pad + 16;
     const badgeY = pad + 14;
 
     // Rank Pill
+    ctx.save();
+    ctx.shadowColor = theme.glow;
+    ctx.shadowBlur = 10;
     ctx.fillStyle = theme.badgeBg;
     ctx.beginPath();
     ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 4);
     ctx.fill();
+    ctx.restore();
 
     ctx.fillStyle = theme.badgeText;
-    ctx.font = 'bold 20px "Orbitron", monospace, sans-serif';
+    ctx.font = '900 20px "Orbitron", monospace, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(rankStr, badgeX + badgeW / 2, badgeY + badgeH / 2);
 
     // City Name
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 25px "Rajdhani", sans-serif';
+    ctx.font = '900 26px "Rajdhani", sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText(name.toUpperCase(), badgeX + badgeW + 14, badgeY + badgeH / 2);
@@ -580,23 +637,23 @@ function createCyberBillboardTexture(
     // 5. Tech Divider Line
     const divY = badgeY + badgeH + 12;
     const lineGrad = ctx.createLinearGradient(pad + 16, divY, w - pad - 16, divY);
-    lineGrad.addColorStop(0, 'rgba(255, 255, 255, 0.1)');
+    lineGrad.addColorStop(0, 'rgba(255, 255, 255, 0.15)');
     lineGrad.addColorStop(0.3, theme.border);
     lineGrad.addColorStop(0.7, theme.border);
-    lineGrad.addColorStop(1, 'rgba(255, 255, 255, 0.1)');
+    lineGrad.addColorStop(1, 'rgba(255, 255, 255, 0.15)');
     ctx.strokeStyle = lineGrad;
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 2.0;
     ctx.beginPath();
     ctx.moveTo(pad + 16, divY);
     ctx.lineTo(w - pad - 16, divY);
     ctx.stroke();
 
-    // 6. Centered, Balanced Value
+    // 6. Centered, Balanced Value - Bright, crisp and glowing!
     ctx.save();
     ctx.shadowColor = theme.glow;
-    ctx.shadowBlur = 14;
+    ctx.shadowBlur = 20;
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 36px "Orbitron", monospace, sans-serif';
+    ctx.font = '900 38px "Orbitron", monospace, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(metricText, w / 2, divY + 40);
@@ -604,24 +661,28 @@ function createCyberBillboardTexture(
   }
 
   const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
   texture.minFilter = THREE.LinearFilter;
   texture.magFilter = THREE.LinearFilter;
+  texture.needsUpdate = true;
   return texture;
 }
 
-// Light colors for the 3D extrusion pedestal side walls
+// High-contrast color themes for the 3D extrusion pedestal side walls
 const EXTRUDE_WALL_COLORS: Record<ExtrudeWallColorType, { name: string; hex: number; lineHex: number }> = {
-  white: { name: 'Açık Platin / Beyaz', hex: 0xf1f5f9, lineHex: 0x00f2fe },
-  silver: { name: 'Açık Gümüş Metalik', hex: 0xe2e8f0, lineHex: 0x38bdf8 },
+  obsidian: { name: 'Koyu Obsidyen (Siber)', hex: 0x040d1e, lineHex: 0x00f2fe },
+  cyber: { name: 'Derin Gece Mavisi', hex: 0x06142a, lineHex: 0x38bdf8 },
+  silver: { name: 'Titanyum Gümüş', hex: 0x1e293b, lineHex: 0x00f2fe },
   marble: { name: 'Açık Mermer / Kumtaşı', hex: 0xfef3c7, lineHex: 0xf59e0b },
-  ice: { name: 'Açık Buz Mavisi', hex: 0xe0f2fe, lineHex: 0x00f2fe }
+  white: { name: 'Açık Platin / Beyaz', hex: 0xf1f5f9, lineHex: 0x00f2fe }
 };
 
 // Smart Multi-Tier Elevation Algorithm:
 // Calculates staggered base heights for geographically adjacent clusters (e.g. Marmara: İstanbul, Kocaeli, Bursa)
 // Northern background cities get taller pedestals; Southern foreground cities get lower pedestals.
 // Result: Natural stadium seating perspective where every card is 100% visible!
-function assignAdaptiveHeights(items: { code: string; rank: number }[]): Map<string, number> {
+function assignAdaptiveHeights(items: { code: string; rank: number }[], isRegion: boolean = false): Map<string, number> {
+  const centroidsMap = isRegion ? REGION_CENTROIDS : PROVINCE_CENTROIDS;
   const result = new Map<string, number>();
   const clusters: { code: string; rank: number }[][] = [];
   const visited = new Set<string>();
@@ -632,17 +693,17 @@ function assignAdaptiveHeights(items: { code: string; rank: number }[]): Map<str
     const cluster = [items[i]];
     visited.add(codeA);
 
-    const ptA = PROVINCE_CENTROIDS[codeA];
+    const ptA = centroidsMap[codeA];
     if (!ptA) continue;
     const [xA, zA] = lonLatToWorld(ptA[0], ptA[1]);
 
     for (let j = i + 1; j < items.length; j++) {
       const codeB = items[j].code;
       if (visited.has(codeB)) continue;
-      const ptB = PROVINCE_CENTROIDS[codeB];
+      const ptB = centroidsMap[codeB];
       if (!ptB) continue;
       const [xB, zB] = lonLatToWorld(ptB[0], ptB[1]);
-      if (Math.hypot(xA - xB, zA - zB) < 5.8) {
+      if (Math.hypot(xA - xB, zA - zB) < (isRegion ? 8.2 : 5.8)) {
         cluster.push(items[j]);
         visited.add(codeB);
       }
@@ -657,8 +718,8 @@ function assignAdaptiveHeights(items: { code: string; rank: number }[]): Map<str
       // Sort cluster by latitude descending (North to South).
       // North is farther in aerial perspective, so receives taller elevation!
       cluster.sort((a, b) => {
-        const latA = PROVINCE_CENTROIDS[a.code] ? PROVINCE_CENTROIDS[a.code][1] : 39;
-        const latB = PROVINCE_CENTROIDS[b.code] ? PROVINCE_CENTROIDS[b.code][1] : 39;
+        const latA = centroidsMap[a.code] ? centroidsMap[a.code][1] : 39;
+        const latB = centroidsMap[b.code] ? centroidsMap[b.code][1] : 39;
         return latB - latA; // Highest lat (north) first
       });
 
@@ -720,11 +781,11 @@ const CANVAS_THEMES: {
     icon: <PieChart className="w-3.5 h-3.5" />,
     items: [
       { id: 'gdp', label: 'Kişi Başına GSYH', unit: '$ / Kişi', source: 'TÜİK İl GSYH', desc: 'Kişi başına düşen gayrisafi yurtiçi hasıla düzeyi' },
-      { id: 'ses', label: 'SEGE Gelişmişlik Endeksi', unit: 'Endeks Skoru', source: 'Kalkınma Ajansları', desc: 'Sanayi ve Teknoloji Bakanlığı SEGE Skoru' },
+      { id: 'ses', label: 'SEGE Gelişmişlik Endeksi', unit: 'Endeks Skoru', source: 'SEGE Endeksi', desc: 'İllerin Sosyoekonomik Gelişmişlik Sıralaması Skoru' },
       { id: 'population', label: 'Toplam İl Nüfusu', unit: 'Kişi', source: 'TÜİK ADNKS', desc: 'Adrese Dayalı Nüfus Kayıt Sistemi verisi' },
       { id: 'unemployment', label: 'İşsizlik Oranı', unit: '% Oran', source: 'TÜİK & İŞKUR', desc: 'İl bazında kayıtlı iş arayan işsizlik payı' },
       { id: 'education', label: 'Ortalama Eğitim Süresi', unit: 'Yıl', source: 'MEB & TÜİK', desc: '25 yaş üzeri ortalama tamamlanan okul yılı' },
-      { id: 'hospital_beds', label: '10.000 Kişiye Düşen Yatak', unit: 'Yatak', source: 'Sağlık Bakanlığı', desc: 'İldeki kamu ve özel hastane yatak kapasitesi' },
+      { id: 'hospital_beds', label: '10.000 Kişiye Düşen Yatak', unit: 'Yatak', source: 'Sağlık Verisi', desc: 'İldeki kamu ve özel hastane yatak kapasitesi' },
     ]
   }
 ];
@@ -742,7 +803,7 @@ interface PresentationOption {
 const PRESENTATION_OPTIONS: PresentationOption[] = [
   {
     id: 'classic',
-    label: 'Klasik DataV',
+    label: 'Klasik Neon HUD',
     badge: 'VARSAYILAN',
     desc: 'Standart kompakt HUD bilgi kartı ve il kodu göstergesi',
     icon: Eye
@@ -766,6 +827,10 @@ const PRESENTATION_OPTIONS: PresentationOption[] = [
 export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
   selectedProvinceCode,
   onSelectProvince,
+  selectedRegionCode = 'TR10',
+  onSelectRegion,
+  mapLevel: controlledMapLevel,
+  onMapLevelChange,
   activeMetric,
   onMetricChange,
   currentMode,
@@ -776,24 +841,34 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
   activeTheme = 'cyber-blue'
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
+
+  // Map Level State: 'province' (81 İl, NUTS-3) vs 'region' (26 İBBS-2 Kalkınma Ajansı Bölgesi)
+  const [internalMapLevel, setInternalMapLevel] = useState<'province' | 'region'>('province');
+  const mapLevel = controlledMapLevel ?? internalMapLevel;
+  const mapLevelRef = useRef<'province' | 'region'>(controlledMapLevel ?? 'province');
+
+  const [internalSelectedRegion, setInternalSelectedRegion] = useState<string>(selectedRegionCode);
+  const activeRegionCode = selectedRegionCode || internalSelectedRegion;
+  const selectedRegionCodeRef = useRef<string>(activeRegionCode);
   
   // 3D Map Billboard Style State ('classic' | 'capsule' | 'terminal')
   const [mapBillboardStyle, setMapBillboardStyle] = useState<MapBillboardStyle>('classic');
-  const [isPresentationOpen, setIsPresentationOpen] = useState<boolean>(false);
-  const presentationPopoverRef = useRef<HTMLDivElement>(null);
   const mapBillboardStyleRef = useRef<MapBillboardStyle>(mapBillboardStyle);
   mapBillboardStyleRef.current = mapBillboardStyle;
   const applyBillboardStyleRef = useRef<((style: MapBillboardStyle) => void) | null>(null);
 
-  // 3D Mouse & Touch Navigation Controls Guide State
-  const [isControlsCollapsed, setIsControlsCollapsed] = useState<boolean>(false);
+  // 3D Mouse & Touch Navigation Controls Guide State (collapsed by default to prevent overlap)
+  const [isControlsCollapsed, setIsControlsCollapsed] = useState<boolean>(true);
   const [isDetailedGuideOpen, setIsDetailedGuideOpen] = useState<boolean>(false);
 
-  // 3D Extrusion Depth
+  // 3D Extrusion Depth & Pedestal Settings
   const [extrudeDepth, setExtrudeDepth] = useState<number>(0.7);
-  const [extrudeWallColor, setExtrudeWallColor] = useState<ExtrudeWallColorType>('marble');
-  const [isExtrudeOpen, setIsExtrudeOpen] = useState<boolean>(false);
-  const extrudePopoverRef = useRef<HTMLDivElement>(null);
+  const [extrudeWallColor, setExtrudeWallColor] = useState<ExtrudeWallColorType>('obsidian');
+
+  // Unified 3D Map Settings Popover (Extrude Pedestal + Billboard Design)
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [settingsTab, setSettingsTab] = useState<'extrude' | 'billboard'>('extrude');
+  const settingsPopoverRef = useRef<HTMLDivElement>(null);
 
   // Category Dropdown State ('trade' | 'osb' | 'women' | 'demography' | null)
   const [openCategory, setOpenCategory] = useState<DashboardMode | null>(null);
@@ -836,11 +911,33 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
     return rankMap;
   }, [activeMetric]);
 
+  // Pre-calculate ranking for all 26 NUTS-2 regions for the active metric
+  const regionRanks = useMemo(() => {
+    const list = REGIONS.map((r) => ({
+      code: r.code,
+      name: r.agency,
+      shortCode: r.shortCode,
+      val: computeRegionMetric(r.code, activeMetric)
+    }));
+    list.sort((a, b) => b.val - a.val);
+    const rankMap = new Map<string, { rank: number; total: number; topPct: number; maxVal: number }>();
+    const maxVal = list[0]?.val || 1;
+    list.forEach((item, idx) => {
+      const rank = idx + 1;
+      const topPct = Math.max(1, Math.round((rank / list.length) * 100));
+      rankMap.set(item.code, { rank, total: list.length, topPct, maxVal });
+    });
+    return rankMap;
+  }, [activeMetric]);
+
   const [hoveredInfo, setHoveredInfo] = useState<{
     code: string;
     name: string;
     value: number;
     agency?: string;
+    shortCode?: string;
+    memberCities?: string;
+    isRegion?: boolean;
     x: number;
     y: number;
   } | null>(null);
@@ -853,6 +950,10 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
 
   // 3D Groups for unified outer extrusion scaling
   const topGroupRef = useRef<THREE.Group | null>(null);
+  const provinceGroupRef = useRef<THREE.Group | null>(null);
+  const regionGroupRef = useRef<THREE.Group | null>(null);
+  const provinceBordersGroupRef = useRef<THREE.Group | null>(null);
+  const regionBordersGroupRef = useRef<THREE.Group | null>(null);
   const sideWallMeshRef = useRef<THREE.Mesh | null>(null);
   const outerTopLineRef = useRef<THREE.LineSegments | null>(null);
   const outerBottomLineRef = useRef<THREE.LineSegments | null>(null);
@@ -860,13 +961,14 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
   const dynamicArcsGroupRef = useRef<THREE.Group | null>(null);
   const hoverBeaconGroupRef = useRef<THREE.Group | null>(null);
 
-  // Map to hold each province's top flat ShapeGeometry meshes
+  // Maps to hold ShapeGeometry meshes & Border Line entries
   const provinceMeshesMapRef = useRef<Map<string, THREE.Mesh[]>>(new Map());
+  const regionMeshesMapRef = useRef<Map<string, THREE.Mesh[]>>(new Map());
+  const provinceBordersMapRef = useRef<Map<string, { line: THREE.Line; material: THREE.LineBasicMaterial }[]>>(new Map());
+  const regionBordersMapRef = useRef<Map<string, { line: THREE.Line; material: THREE.LineBasicMaterial }[]>>(new Map());
 
   const selectedMeshCodeRef = useRef<string>(selectedProvinceCode);
-  selectedMeshCodeRef.current = selectedProvinceCode;
   const activeMetricRef = useRef<MapMetricType>(activeMetric);
-  activeMetricRef.current = activeMetric;
   const extrudeDepthRef = useRef<number>(extrudeDepth);
   extrudeDepthRef.current = extrudeDepth;
   const extrudeWallColorRef = useRef<ExtrudeWallColorType>(extrudeWallColor);
@@ -879,18 +981,86 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
   const updateHoverBeaconRef = useRef<((code: string | null) => void) | null>(null);
   const updateProvincesVisualRef = useRef<(() => void) | null>(null);
 
+  // Handler for Level change (81 İl vs 26 İBBS-2 Bölge)
+  const handleMapLevelChange = (newLevel: 'province' | 'region') => {
+    setInternalMapLevel(newLevel);
+    mapLevelRef.current = newLevel;
+
+    if (provinceGroupRef.current && regionGroupRef.current) {
+      provinceGroupRef.current.visible = newLevel === 'province';
+      regionGroupRef.current.visible = newLevel === 'region';
+    }
+    if (provinceBordersGroupRef.current && regionBordersGroupRef.current) {
+      // Province sub-boundaries stay visible in both modes, regional borders visible in 26-region mode
+      provinceBordersGroupRef.current.visible = true;
+      regionBordersGroupRef.current.visible = newLevel === 'region';
+    }
+
+    if (updateProvincesVisualRef.current) {
+      updateProvincesVisualRef.current();
+    }
+    if (updateBaseBeaconsRef.current) {
+      updateBaseBeaconsRef.current(
+        activeMetricRef.current,
+        newLevel === 'region' ? selectedRegionCodeRef.current : selectedMeshCodeRef.current
+      );
+    }
+  };
+
   // Re-render beacons when theme changes
   useEffect(() => {
     if (updateBaseBeaconsRef.current) {
-      updateBaseBeaconsRef.current(activeMetric, selectedProvinceCode);
+      updateBaseBeaconsRef.current(
+        activeMetric, 
+        mapLevelRef.current === 'region' ? selectedRegionCodeRef.current : selectedProvinceCode
+      );
     }
   }, [activeTheme]);
+
+  // Sync controlled mapLevel
+  useEffect(() => {
+    if (controlledMapLevel !== undefined) {
+      handleMapLevelChange(controlledMapLevel);
+    }
+  }, [controlledMapLevel]);
+
+  // Sync controlled selectedRegionCode
+  useEffect(() => {
+    if (selectedRegionCode) {
+      selectedRegionCodeRef.current = selectedRegionCode;
+      setInternalSelectedRegion(selectedRegionCode);
+      if (updateProvincesVisualRef.current) updateProvincesVisualRef.current();
+      if (mapLevelRef.current === 'region' && updateBaseBeaconsRef.current) {
+        updateBaseBeaconsRef.current(activeMetric, selectedRegionCode);
+      }
+    }
+  }, [selectedRegionCode]);
+
+  // Sync selectedProvinceCode
+  useEffect(() => {
+    selectedMeshCodeRef.current = selectedProvinceCode;
+    if (updateProvincesVisualRef.current) updateProvincesVisualRef.current();
+    if (mapLevelRef.current === 'province' && updateBaseBeaconsRef.current) {
+      updateBaseBeaconsRef.current(activeMetric, selectedProvinceCode);
+    }
+  }, [selectedProvinceCode]);
+
+  // Sync activeMetric
+  useEffect(() => {
+    activeMetricRef.current = activeMetric;
+    if (updateBaseBeaconsRef.current) {
+      updateBaseBeaconsRef.current(
+        activeMetric,
+        mapLevelRef.current === 'region' ? selectedRegionCodeRef.current : selectedMeshCodeRef.current
+      );
+    }
+  }, [activeMetric]);
 
   // Close popover when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (extrudePopoverRef.current && !extrudePopoverRef.current.contains(event.target as Node)) {
-        setIsExtrudeOpen(false);
+      if (settingsPopoverRef.current && !settingsPopoverRef.current.contains(event.target as Node)) {
+        setIsSettingsOpen(false);
       }
       if (catalogPopoverRef.current && !catalogPopoverRef.current.contains(event.target as Node)) {
         setIsCatalogOpen(false);
@@ -898,17 +1068,14 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
       if (categoryNavRef.current && !categoryNavRef.current.contains(event.target as Node)) {
         setOpenCategory(null);
       }
-      if (presentationPopoverRef.current && !presentationPopoverRef.current.contains(event.target as Node)) {
-        setIsPresentationOpen(false);
-      }
     };
-    if (isExtrudeOpen || isCatalogOpen || openCategory !== null || isPresentationOpen) {
+    if (isSettingsOpen || isCatalogOpen || openCategory !== null) {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [isExtrudeOpen, isCatalogOpen, openCategory, isPresentationOpen]);
+  }, [isSettingsOpen, isCatalogOpen, openCategory]);
 
   // Handler to synchronously re-render all 3D billboards across Turkey with newly selected design
   const handleSelectBillboardStyle = (styleId: MapBillboardStyle) => {
@@ -917,7 +1084,6 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
     if (applyBillboardStyleRef.current) {
       applyBillboardStyleRef.current(styleId);
     }
-    setIsPresentationOpen(false);
   };
 
   // Cinematic Orbit when AutoPlay is enabled & Smooth Camera Reset when Paused
@@ -1147,11 +1313,42 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
     const provinceMeshesMap = new Map<string, THREE.Mesh[]>();
     provinceMeshesMapRef.current = provinceMeshesMap;
 
+    const regionMeshesMap = new Map<string, THREE.Mesh[]>();
+    regionMeshesMapRef.current = regionMeshesMap;
+
+    const provinceBordersMap = new Map<string, { line: THREE.Line; material: THREE.LineBasicMaterial }[]>();
+    provinceBordersMapRef.current = provinceBordersMap;
+
+    const regionBordersMap = new Map<string, { line: THREE.Line; material: THREE.LineBasicMaterial }[]>();
+    regionBordersMapRef.current = regionBordersMap;
+
     const topGroup = new THREE.Group();
     topGroup.position.y = extrudeDepthRef.current;
     topGroupRef.current = topGroup;
     scene.add(topGroup);
 
+    const provinceGroup = new THREE.Group();
+    const regionGroup = new THREE.Group();
+    const provinceBordersGroup = new THREE.Group();
+    const regionBordersGroup = new THREE.Group();
+
+    topGroup.add(provinceGroup);
+    topGroup.add(regionGroup);
+    topGroup.add(provinceBordersGroup);
+    topGroup.add(regionBordersGroup);
+
+    provinceGroupRef.current = provinceGroup;
+    regionGroupRef.current = regionGroup;
+    provinceBordersGroupRef.current = provinceBordersGroup;
+    regionBordersGroupRef.current = regionBordersGroup;
+
+    const isInitialRegion = mapLevelRef.current === 'region';
+    provinceGroup.visible = !isInitialRegion;
+    regionGroup.visible = isInitialRegion;
+    provinceBordersGroup.visible = true;
+    regionBordersGroup.visible = isInitialRegion;
+
+    // 7A. Build 81 Province Meshes (NUTS-3)
     if (defaultGeoData && (defaultGeoData as any).features) {
       (defaultGeoData as any).features.forEach((feature: any) => {
         const code = String(feature.properties.duzeyKodu);
@@ -1164,6 +1361,7 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
           : coordinates;
 
         const meshesForProvince: THREE.Mesh[] = [];
+        const linesForProvince: { line: THREE.Line; material: THREE.LineBasicMaterial }[] = [];
 
         polyRingsList.forEach((polyRings: number[][][]) => {
           if (!polyRings || polyRings.length === 0) return;
@@ -1217,31 +1415,163 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
             map: satelliteTexture,
             color: 0xffffff,
             roughness: 0.55,
-            metalness: 0.12
+            metalness: 0.12,
+            polygonOffset: true,
+            polygonOffsetFactor: 1.0,
+            polygonOffsetUnits: 1.0
           });
 
           const mesh = new THREE.Mesh(geometry, topMat);
           mesh.receiveShadow = true;
-          mesh.userData = { code, name, topMat };
+          mesh.userData = { code, name, isRegion: false, topMat };
 
-          topGroup.add(mesh);
+          provinceGroup.add(mesh);
           meshesForProvince.push(mesh);
 
           const linePoints: THREE.Vector3[] = outerCoords.map((pt) => {
             const [wx, wz] = lonLatToWorld(pt[0], pt[1]);
-            return new THREE.Vector3(wx, 0.02, wz);
+            return new THREE.Vector3(wx, 0.04, wz);
           });
           const lineGeo = new THREE.BufferGeometry().setFromPoints(linePoints);
           const lineMat = new THREE.LineBasicMaterial({ 
             color: 0xffffff, 
             transparent: true, 
-            opacity: 0.70 
+            opacity: 0.70,
+            depthTest: true
           });
           const borderLine = new THREE.Line(lineGeo, lineMat);
-          topGroup.add(borderLine);
+          borderLine.renderOrder = 15;
+          borderLine.raycast = () => {}; // Never block raycasting or clicks
+          provinceBordersGroup.add(borderLine);
+          linesForProvince.push({ line: borderLine, material: lineMat });
         });
 
         provinceMeshesMap.set(code, meshesForProvince);
+        provinceBordersMap.set(code, linesForProvince);
+      });
+    }
+
+    // 7B. Build 26 NUTS-2 Regional Meshes & Bold Regional Borders
+    if (nuts2GeoData && (nuts2GeoData as any).features) {
+      (nuts2GeoData as any).features.forEach((feature: any) => {
+        const code = String(feature.properties.bolgeKodu || feature.properties.duzeyKodu);
+        const reg = getRegionByCode(code);
+        const name = reg 
+          ? `${reg.shortCode} (${reg.provinces.slice(0, 2).join(', ')}${reg.provinces.length > 2 ? '..' : ''})` 
+          : feature.properties.name || feature.properties.ad;
+        const geomType = feature.geometry.type;
+        const coordinates = feature.geometry.coordinates;
+
+        const polyRingsList: number[][][][] = geomType === 'Polygon' 
+          ? [coordinates] 
+          : coordinates;
+
+        const meshesForRegion: THREE.Mesh[] = [];
+        const linesForRegion: { line: THREE.Line; material: THREE.LineBasicMaterial }[] = [];
+
+        polyRingsList.forEach((polyRings: number[][][]) => {
+          if (!polyRings || polyRings.length === 0) return;
+
+          const outerCoords = polyRings[0];
+          const shape = new THREE.Shape();
+
+          outerCoords.forEach((pt: number[], ptIdx: number) => {
+            const [wx, wz] = lonLatToWorld(pt[0], pt[1]);
+            if (ptIdx === 0) {
+              shape.moveTo(wx, -wz);
+            } else {
+              shape.lineTo(wx, -wz);
+            }
+          });
+
+          for (let h = 1; h < polyRings.length; h++) {
+            const holeCoords = polyRings[h];
+            const holePath = new THREE.Path();
+            holeCoords.forEach((pt: number[], ptIdx: number) => {
+              const [wx, wz] = lonLatToWorld(pt[0], pt[1]);
+              if (ptIdx === 0) holePath.moveTo(wx, -wz);
+              else holePath.lineTo(wx, -wz);
+            });
+            shape.holes.push(holePath);
+          }
+
+          const geometry = new THREE.ShapeGeometry(shape);
+          geometry.rotateX(-Math.PI / 2);
+
+          const pos = geometry.attributes.position;
+          const uvs = geometry.attributes.uv;
+          for (let i = 0; i < pos.count; i++) {
+            const vx = pos.getX(i);
+            const vz = pos.getZ(i);
+
+            const lon = vx / SCALE_X + CENTER_LON;
+            const lat = -vz / SCALE_Z + CENTER_LAT;
+
+            const u = (lon - SAT_LON_MIN) / (SAT_LON_MAX - SAT_LON_MIN);
+            const latRad = (lat * Math.PI) / 180;
+            const merc = Math.log(Math.tan(Math.PI / 4 + latRad / 2));
+            const v = (merc - SAT_MERC_SOUTH) / (SAT_MERC_NORTH - SAT_MERC_SOUTH);
+
+            uvs.setXY(i, Math.max(0, Math.min(1, u)), Math.max(0, Math.min(1, v)));
+          }
+          uvs.needsUpdate = true;
+          geometry.computeVertexNormals();
+
+          const topMat = new THREE.MeshStandardMaterial({
+            map: satelliteTexture,
+            color: 0xffffff,
+            roughness: 0.55,
+            metalness: 0.12,
+            polygonOffset: true,
+            polygonOffsetFactor: 1.0,
+            polygonOffsetUnits: 1.0
+          });
+
+          const mesh = new THREE.Mesh(geometry, topMat);
+          mesh.receiveShadow = true;
+          mesh.userData = { code, name, isRegion: true, topMat };
+
+          regionGroup.add(mesh);
+          meshesForRegion.push(mesh);
+
+          const linePoints: THREE.Vector3[] = outerCoords.map((pt) => {
+            const [wx, wz] = lonLatToWorld(pt[0], pt[1]);
+            return new THREE.Vector3(wx, 0.05, wz);
+          });
+          const lineGeo = new THREE.BufferGeometry().setFromPoints(linePoints);
+          const lineMat = new THREE.LineBasicMaterial({ 
+            color: 0xffffff, 
+            transparent: true, 
+            opacity: 0.85,
+            depthTest: true
+          });
+          const borderLine = new THREE.Line(lineGeo, lineMat);
+          borderLine.renderOrder = 22;
+          borderLine.raycast = () => {}; // Never block raycasting or clicks
+          regionBordersGroup.add(borderLine);
+          linesForRegion.push({ line: borderLine, material: lineMat });
+
+          // Second elevated layer for substantial thickness and crisp white contour
+          const linePointsGlow: THREE.Vector3[] = outerCoords.map((pt) => {
+            const [wx, wz] = lonLatToWorld(pt[0], pt[1]);
+            return new THREE.Vector3(wx, 0.07, wz);
+          });
+          const lineGeoGlow = new THREE.BufferGeometry().setFromPoints(linePointsGlow);
+          const lineMatGlow = new THREE.LineBasicMaterial({ 
+            color: 0xffffff, 
+            transparent: true, 
+            opacity: 0.70,
+            depthTest: true
+          });
+          const borderLineGlow = new THREE.Line(lineGeoGlow, lineMatGlow);
+          borderLineGlow.renderOrder = 24;
+          borderLineGlow.raycast = () => {};
+          regionBordersGroup.add(borderLineGlow);
+          linesForRegion.push({ line: borderLineGlow, material: lineMatGlow });
+        });
+
+        regionMeshesMap.set(code, meshesForRegion);
+        regionBordersMap.set(code, linesForRegion);
       });
     }
 
@@ -1563,7 +1893,7 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
     let hoverPillar = createPillarComponents(mapBillboardStyleRef.current, 'emerald', 0x00f2fe, 7.4);
     hoverBeaconGroup.add(hoverPillar.pillarGroup);
 
-    const hoverSpriteMat = new THREE.SpriteMaterial({ transparent: true });
+    const hoverSpriteMat = new THREE.SpriteMaterial({ transparent: true, toneMapped: false });
     const hoverSprite = new THREE.Sprite(hoverSpriteMat);
     hoverSprite.position.set(0, 8.0, 0);
     hoverBeaconGroup.add(hoverSprite);
@@ -1579,14 +1909,15 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
       role: 'gold' | 'cyan' | 'blue',
       baseHeight: number = 7.8
     ) => {
-      const coords = PROVINCE_CENTROIDS[code];
+      const isRegion = mapLevelRef.current === 'region';
+      const coords = isRegion ? REGION_CENTROIDS[code] : PROVINCE_CENTROIDS[code];
       if (!coords) return null;
       const [hx, hz] = lonLatToWorld(coords[0], coords[1]);
 
       const group = new THREE.Group();
       group.position.set(hx, 0, hz);
       group.scale.set(1, 0.05, 1);
-      group.userData = { targetScaleY: 1.0, isBeacon: true, code };
+      group.userData = { targetScaleY: 1.0, isBeacon: true, code, isRegion };
 
       const themePrimaryHex = 
         activeThemeRef.current === 'gold-titanium' ? 0xf59e0b :
@@ -1613,9 +1944,9 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
         mapBillboardStyleRef.current,
         { code, val }
       );
-      const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true });
+      const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true, toneMapped: false });
       const sprite = new THREE.Sprite(spriteMat);
-      sprite.scale.set(4.5, 1.38, 1);
+      sprite.scale.set(14.0, 7.0, 1);
       sprite.position.set(0, baseHeight + 0.6, 0);
       group.add(sprite);
 
@@ -1647,11 +1978,20 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
         activeThemeRef.current === 'crimson-command' ? 0xf43f5e :
         0x00f2fe;
 
-      const ranked = Object.keys(PROVINCE_CODES).map((code) => ({
-        code,
-        name: PROVINCE_CODES[code],
-        value: computeProvinceMetric(code, metric)
-      })).sort((a, b) => b.value - a.value);
+      const isRegion = mapLevelRef.current === 'region';
+      const targetCode = isRegion ? (selectedRegionCodeRef.current || 'TR10') : selCode;
+
+      const ranked = isRegion
+        ? REGIONS.map((r) => ({
+            code: r.code,
+            name: `${r.shortCode} (${r.provinces.slice(0, 2).join(', ')}${r.provinces.length > 2 ? '..' : ''})`,
+            value: computeRegionMetric(r.code, metric)
+          })).sort((a, b) => b.value - a.value)
+        : Object.keys(PROVINCE_CODES).map((code) => ({
+            code,
+            name: PROVINCE_CODES[code],
+            value: computeProvinceMetric(code, metric)
+          })).sort((a, b) => b.value - a.value);
 
       const rankMap = new Map<string, number>();
       ranked.forEach((item, idx) => rankMap.set(item.code, idx + 1));
@@ -1667,7 +2007,7 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
 
       ranked.slice(0, 5).forEach((item) => {
         const rank = rankMap.get(item.code) || 1;
-        const isSel = item.code === selCode;
+        const isSel = item.code === targetCode;
         targetMap.set(item.code, {
           ...item,
           rank,
@@ -1675,20 +2015,20 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
         });
       });
 
-      if (!targetMap.has(selCode)) {
-        const sItem = ranked.find((r) => r.code === selCode);
+      if (targetCode && !targetMap.has(targetCode)) {
+        const sItem = ranked.find((r) => r.code === targetCode);
         if (sItem) {
-          targetMap.set(selCode, {
+          targetMap.set(targetCode, {
             ...sItem,
-            rank: rankMap.get(selCode) || 1,
+            rank: rankMap.get(targetCode) || 1,
             role: 'gold'
           });
         }
       }
 
-      // Calculate staggered adaptive base heights for any neighboring clusters (e.g. Istanbul / Kocaeli / Bursa)
+      // Calculate staggered adaptive base heights for any neighboring clusters
       const targetList = Array.from(targetMap.values());
-      const adaptiveHeightMap = assignAdaptiveHeights(targetList);
+      const adaptiveHeightMap = assignAdaptiveHeights(targetList, isRegion);
 
       // Remove beacons that are no longer in target
       Array.from(activeBaseBeaconsMap.keys()).forEach((code) => {
@@ -1776,12 +2116,13 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
 
       const displayList = Array.from(targetMap.values());
       if (displayList.length >= 2) {
-        const top1Coords = PROVINCE_CENTROIDS[displayList[0].code];
+        const centroidsMap = isRegion ? REGION_CENTROIDS : PROVINCE_CENTROIDS;
+        const top1Coords = centroidsMap[displayList[0].code];
         if (top1Coords) {
           const [top1X, top1Z] = lonLatToWorld(top1Coords[0], top1Coords[1]);
 
           displayList.slice(1).forEach((dest) => {
-            const destCoords = PROVINCE_CENTROIDS[dest.code];
+            const destCoords = centroidsMap[dest.code];
             if (!destCoords) return;
             const [destX, destZ] = lonLatToWorld(destCoords[0], destCoords[1]);
 
@@ -1799,7 +2140,7 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
             const arcPoints = curve.getPoints(45);
             const arcGeo = new THREE.BufferGeometry().setFromPoints(arcPoints);
             const arcMat = new THREE.LineDashedMaterial({
-              color: 0x00f2fe,
+              color: isRegion ? 0xf59e0b : 0x00f2fe,
               dashSize: 1.2,
               gapSize: 0.8,
               transparent: true,
@@ -1820,7 +2161,9 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
         return;
       }
 
-      const coords = PROVINCE_CENTROIDS[code];
+      const isRegion = mapLevelRef.current === 'region';
+      const centroidsMap = isRegion ? REGION_CENTROIDS : PROVINCE_CENTROIDS;
+      const coords = centroidsMap[code];
       if (!coords) {
         hoverBeaconGroup.visible = false;
         return;
@@ -1833,14 +2176,30 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
       hoverBeaconGroup.visible = true;
 
       const currentMetric = activeMetricRef.current;
-      const ranked = Object.keys(PROVINCE_CODES).map((c) => ({
-        code: c,
-        value: computeProvinceMetric(c, currentMetric)
-      })).sort((a, b) => b.value - a.value);
-      const rankIdx = ranked.findIndex((r) => r.code === code);
-      const rank = rankIdx !== -1 ? rankIdx + 1 : 1;
-      const name = PROVINCE_CODES[code] || 'İL';
-      const val = computeProvinceMetric(code, currentMetric);
+      let rank = 1;
+      let name = 'LOKASYON';
+      let val = 0;
+
+      if (isRegion) {
+        const reg = getRegionByCode(code);
+        name = reg ? reg.shortCode : code;
+        val = computeRegionMetric(code, currentMetric);
+        const ranked = REGIONS.map((r) => ({
+          code: r.code,
+          val: computeRegionMetric(r.code, currentMetric)
+        })).sort((a, b) => b.val - a.val);
+        const rankIdx = ranked.findIndex((r) => r.code === code);
+        rank = rankIdx !== -1 ? rankIdx + 1 : 1;
+      } else {
+        const ranked = Object.keys(PROVINCE_CODES).map((c) => ({
+          code: c,
+          value: computeProvinceMetric(c, currentMetric)
+        })).sort((a, b) => b.value - a.value);
+        const rankIdx = ranked.findIndex((r) => r.code === code);
+        rank = rankIdx !== -1 ? rankIdx + 1 : 1;
+        name = PROVINCE_CODES[code] || 'İL';
+        val = computeProvinceMetric(code, currentMetric);
+      }
 
       hoverSprite.material.map?.dispose();
       hoverSprite.material.map = createCyberBillboardTexture(
@@ -1855,12 +2214,15 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
       hoverSprite.material.needsUpdate = true;
     };
 
-    // Update Province Appearance: AUTHENTIC GOOGLE EARTH SATELLITE TERRAIN PRESERVED!
+    // Update Province & Region Appearance: AUTHENTIC GOOGLE EARTH SATELLITE TERRAIN PRESERVED!
     const updateProvincesVisual = () => {
+      const isRegion = mapLevelRef.current === 'region';
       const selCode = selectedMeshCodeRef.current;
+      const selRegCode = selectedRegionCodeRef.current;
 
+      // 1. Province Meshes Emissive
       provinceMeshesMap.forEach((meshes, code) => {
-        const isSelected = code === selCode;
+        const isSelected = !isRegion && code === selCode;
 
         meshes.forEach((mesh) => {
           const mat = mesh.userData?.topMat as THREE.MeshStandardMaterial | undefined;
@@ -1877,6 +2239,76 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
             mat.emissiveIntensity = 0.0;
           }
           mat.needsUpdate = true;
+        });
+      });
+
+      // 2. Province Borders: Subtle sub-boundaries in 26-region mode; bright & highlighted in 81-province mode
+      provinceBordersMap.forEach((entries, code) => {
+        const isSelected = !isRegion && code === selCode;
+        entries.forEach(({ line, material }) => {
+          if (isRegion) {
+            // Keep province borders very subtle so the 26 Düzey-2 Regional boundaries are the dominant visual borders
+            material.color.setHex(0x1e293b);
+            material.opacity = 0.20;
+            line.position.y = 0.02;
+            line.renderOrder = 4;
+          } else {
+            if (isSelected) {
+              material.color.setHex(0xf59e0b);
+              material.opacity = 1.0;
+              line.position.y = 0.08;
+              line.renderOrder = 26;
+            } else {
+              material.color.setHex(0xffffff);
+              material.opacity = 0.70;
+              line.position.y = 0.04;
+              line.renderOrder = 15;
+            }
+          }
+          material.needsUpdate = true;
+        });
+      });
+
+      // 3. Region Meshes Emissive
+      regionMeshesMap.forEach((meshes, code) => {
+        const isSelected = isRegion && code === selRegCode;
+
+        meshes.forEach((mesh) => {
+          const mat = mesh.userData?.topMat as THREE.MeshStandardMaterial | undefined;
+          if (!mat) return;
+
+          mat.map = satelliteTexture;
+          mat.color.setHex(0xffffff);
+
+          if (isSelected) {
+            mat.emissive.setHex(0xf59e0b);
+            mat.emissiveIntensity = 0.55;
+          } else {
+            mat.emissive.setHex(0x000000);
+            mat.emissiveIntensity = 0.0;
+          }
+          mat.needsUpdate = true;
+        });
+      });
+
+      // 4. Region Borders: Bold Regional Boundary Lines with Glowing Gold Highlight on Selected Region
+      regionBordersMap.forEach((entries, code) => {
+        const isSelected = isRegion && code === selRegCode;
+        entries.forEach(({ line, material }) => {
+          if (isSelected) {
+            // Active Selected Region: High-visibility Glowing Gold-Amber Border
+            material.color.setHex(0xf59e0b);
+            material.opacity = 1.0;
+            line.position.y = 0.09;
+            line.renderOrder = 32;
+          } else {
+            // Default 26 Region Boundary: Elegant Pure White Line (Matches Theme)
+            material.color.setHex(0xffffff);
+            material.opacity = 0.85;
+            line.position.y = 0.06;
+            line.renderOrder = 22;
+          }
+          material.needsUpdate = true;
         });
       });
     };
@@ -1955,38 +2387,130 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
       mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
       raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects(topGroup.children);
+      const isRegion = mapLevelRef.current === 'region';
+      const activeGroup = isRegion ? regionGroup : provinceGroup;
+      const intersects = raycaster.intersectObjects(activeGroup.children);
 
       const hitMesh = intersects.find((hit) => hit.object.userData?.code)?.object as THREE.Mesh | undefined;
 
       if (hitMesh !== hoveredMesh) {
-        if (hoveredMesh && hoveredMesh.userData?.topMat) {
-          const isSelected = hoveredMesh.userData.code === selectedMeshCodeRef.current;
-          if (isSelected) {
-            hoveredMesh.userData.topMat.emissive.setHex(0xf59e0b);
-            hoveredMesh.userData.topMat.emissiveIntensity = 0.55;
-          } else {
-            hoveredMesh.userData.topMat.emissive.setHex(0x000000);
-            hoveredMesh.userData.topMat.emissiveIntensity = 0.0;
+        // Reset previously hovered mesh & border line
+        if (hoveredMesh) {
+          const prevCode = hoveredMesh.userData?.code;
+          const prevIsRegion = !!hoveredMesh.userData?.isRegion;
+          const prevIsSelected = prevIsRegion
+            ? prevCode === selectedRegionCodeRef.current
+            : prevCode === selectedMeshCodeRef.current;
+
+          if (hoveredMesh.userData?.topMat) {
+            if (prevIsSelected) {
+              hoveredMesh.userData.topMat.emissive.setHex(0xf59e0b);
+              hoveredMesh.userData.topMat.emissiveIntensity = 0.55;
+            } else {
+              hoveredMesh.userData.topMat.emissive.setHex(0x000000);
+              hoveredMesh.userData.topMat.emissiveIntensity = 0.0;
+            }
+          }
+
+          if (prevIsRegion && prevCode) {
+            const lines = regionBordersMap.get(prevCode);
+            if (lines) {
+              lines.forEach(({ line, material }) => {
+                if (prevIsSelected) {
+                  material.color.setHex(0xf59e0b);
+                  material.opacity = 1.0;
+                  line.position.y = 0.09;
+                  line.renderOrder = 32;
+                } else {
+                  material.color.setHex(0xffffff);
+                  material.opacity = 0.85;
+                  line.position.y = 0.06;
+                  line.renderOrder = 22;
+                }
+                material.needsUpdate = true;
+              });
+            }
+          } else if (!prevIsRegion && prevCode) {
+            const lines = provinceBordersMap.get(prevCode);
+            if (lines) {
+              lines.forEach(({ line, material }) => {
+                if (isRegion) {
+                  material.color.setHex(0x64748b);
+                  material.opacity = 0.35;
+                  line.position.y = 0.03;
+                  line.renderOrder = 10;
+                } else if (prevIsSelected) {
+                  material.color.setHex(0xf59e0b);
+                  material.opacity = 1.0;
+                  line.position.y = 0.08;
+                  line.renderOrder = 26;
+                } else {
+                  material.color.setHex(0xffffff);
+                  material.opacity = 0.70;
+                  line.position.y = 0.04;
+                  line.renderOrder = 15;
+                }
+                material.needsUpdate = true;
+              });
+            }
           }
         }
 
+        // Highlight newly hovered mesh & border line
         if (hitMesh && hitMesh.userData?.topMat) {
           hitMesh.userData.topMat.emissive.setHex(0x00f2fe);
           hitMesh.userData.topMat.emissiveIntensity = 0.40;
 
           const code = hitMesh.userData.code;
-          const name = hitMesh.userData.name;
-          const reg = REGIONS.find((r) => r.provinces.some((p) => p.toLowerCase() === name.toLowerCase()));
+          const isMeshRegion = !!hitMesh.userData.isRegion;
 
-          setHoveredInfo({
-            code,
-            name,
-            value: computeProvinceMetric(code, activeMetricRef.current),
-            agency: reg?.shortCode,
-            x: event.clientX,
-            y: event.clientY
-          });
+          if (isMeshRegion) {
+            const lines = regionBordersMap.get(code);
+            if (lines) {
+              lines.forEach(({ line, material }) => {
+                material.color.setHex(0x00f2fe); // Glowing Electric Cyan Border Highlight
+                material.opacity = 1.0;
+                line.position.y = 0.11;
+                line.renderOrder = 32;
+                material.needsUpdate = true;
+              });
+            }
+
+            const reg = getRegionByCode(code);
+            const val = computeRegionMetric(code, activeMetricRef.current);
+            setHoveredInfo({
+              code,
+              name: reg ? reg.agency : hitMesh.userData.name,
+              value: val,
+              agency: reg?.agency,
+              shortCode: reg?.shortCode,
+              memberCities: reg ? reg.provinces.join(', ') : undefined,
+              isRegion: true,
+              x: event.clientX,
+              y: event.clientY
+            });
+          } else {
+            const lines = provinceBordersMap.get(code);
+            if (lines) {
+              lines.forEach(({ line, material }) => {
+                material.color.setHex(0x00f2fe); // Glowing Cyan Province Border Highlight
+                material.opacity = 1.0;
+                line.position.y = 0.10;
+                line.renderOrder = 30;
+                material.needsUpdate = true;
+              });
+            }
+
+            const val = computeProvinceMetric(code, activeMetricRef.current);
+            setHoveredInfo({
+              code,
+              name: hitMesh.userData.name,
+              value: val,
+              isRegion: false,
+              x: event.clientX,
+              y: event.clientY
+            });
+          }
 
           if (updateHoverBeaconRef.current) {
             updateHoverBeaconRef.current(code);
@@ -1999,17 +2523,36 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
         }
         hoveredMesh = hitMesh || null;
       } else if (hitMesh && hitMesh.userData?.code) {
-        // Continuously update cursor coordinates while hovering the province
+        // Continuously update cursor coordinates while hovering
         setHoveredInfo((prev) => prev ? { ...prev, x: event.clientX, y: event.clientY } : null);
       }
     };
 
     const onClick = (event: MouseEvent) => {
       raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects(topGroup.children);
+      const isRegion = mapLevelRef.current === 'region';
+      const activeGroup = isRegion ? regionGroup : provinceGroup;
+      const intersects = raycaster.intersectObjects(activeGroup.children);
       const hitMesh = intersects.find((hit) => hit.object.userData?.code)?.object as THREE.Mesh | undefined;
       if (hitMesh && hitMesh.userData?.code) {
-        onSelectProvince(hitMesh.userData.code);
+        const code = hitMesh.userData.code;
+        if (isRegion) {
+          if (onSelectRegion) onSelectRegion(code);
+          setInternalSelectedRegion(code);
+          selectedRegionCodeRef.current = code;
+          const reg = getRegionByCode(code);
+          if (reg && reg.provinces[0]) {
+            const pCode = PROVINCE_TO_CODE[reg.provinces[0]];
+            if (pCode) onSelectProvince(pCode);
+          }
+          updateProvincesVisual();
+          updateBaseBeacons(activeMetricRef.current, code);
+        } else {
+          onSelectProvince(code);
+          selectedMeshCodeRef.current = code;
+          updateProvincesVisual();
+          updateBaseBeacons(activeMetricRef.current, code);
+        }
       }
     };
 
@@ -2293,9 +2836,10 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
               <button
                 onClick={() => {
                   setIsCatalogOpen(false);
+                  setIsSettingsOpen(false);
                   setOpenCategory(isOpen ? null : cat.id);
                 }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-['Rajdhani'] font-bold tracking-wider transition-all rounded-xs border ${
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-['Rajdhani'] font-bold tracking-wider transition-all rounded-xs border ${
                   isOpen
                     ? 'bg-cyan-500 text-slate-950 border-cyan-300 shadow-[0_0_12px_#00f2fe]'
                     : isCatActive
@@ -2491,249 +3035,255 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
         </div>
       </div>
 
-      {/* Top Right: Camera, Extrude Pedestal Settings & PNG Export */}
+      {/* Top Right: Compact Unified 3D Controls Toolbar */}
       <div className="absolute top-3 right-4 z-20 flex flex-col items-end gap-2">
-        <div className="flex items-center gap-1.5 bg-[#0b172a]/90 backdrop-blur-md p-1.5 rounded border border-cyan-500/50 text-cyan-300 shadow-lg">
-          {/* PNG Export */}
-          <button
-            onClick={exportMapPNG}
-            className="flex items-center gap-1 px-2 py-1 text-xs font-['Rajdhani'] font-bold rounded transition-colors hover:bg-cyan-500/20 text-cyan-300 hover:text-white"
-            title="Google Earth 3D Harita Görüntüsünü PNG Olarak İndir"
-          >
-            <Camera className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="hidden sm:inline">PNG İNDİR</span>
-          </button>
-
-          {/* 3D Extrude Size & Light-Color Pedestal Settings */}
+        <div className="flex items-center gap-1 bg-[#0b172a]/92 backdrop-blur-md p-1 rounded-xs border border-cyan-500/40 text-cyan-300 shadow-[0_4px_20px_rgba(0,0,0,0.5)]">
+          {/* 3D Harita & Görünüm Ayarları (Unified Kaide + Billboard Popover) */}
           <div className="relative">
             <button
-              onClick={() => setIsExtrudeOpen(!isExtrudeOpen)}
-              className={`flex items-center gap-1 px-2 py-1 text-xs font-['Rajdhani'] font-bold rounded transition-colors ${
-                isExtrudeOpen
+              onClick={() => {
+                setIsCatalogOpen(false);
+                setOpenCategory(null);
+                setIsSettingsOpen(!isSettingsOpen);
+              }}
+              className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-['Rajdhani'] font-bold rounded-xs transition-all ${
+                isSettingsOpen
                   ? 'bg-cyan-500 text-slate-950 shadow-[0_0_10px_#00f2fe]'
                   : 'text-cyan-300 hover:text-white hover:bg-cyan-500/20'
               }`}
-              title="3D Harita Dış Sınır Kabartma Derinliği ve Açık Kaide Rengi"
+              title="3B Harita Ayarları (Kaide Kabartma & 3B Veri Etiketi Tasarımı)"
             >
-              <Layers className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">KABARTMA: {extrudeDepth.toFixed(1)}x</span>
+              <Sliders className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="hidden sm:inline">3B AYARLAR</span>
+              <ChevronDown className={`w-3 h-3 transition-transform ${isSettingsOpen ? 'rotate-180' : ''}`} />
             </button>
 
-            {/* Slider Popover with Light-Color Extrude Options */}
-            {isExtrudeOpen && (
+            {/* Unified Settings Popover */}
+            {isSettingsOpen && (
               <div 
-                ref={extrudePopoverRef}
-                className="absolute top-full right-0 mt-2 z-50 w-72 p-3 bg-[#071328]/95 backdrop-blur-xl border border-cyan-400/50 shadow-[0_8px_32px_rgba(0,0,0,0.5)] rounded-xs flex flex-col gap-2.5 select-none text-white"
+                ref={settingsPopoverRef}
+                className="absolute top-full right-0 mt-2 z-50 w-80 p-3 bg-[#071328]/98 backdrop-blur-2xl border border-cyan-400/60 shadow-[0_12px_40px_rgba(0,0,0,0.85)] rounded-xs flex flex-col gap-2.5 select-none text-white animate-in fade-in zoom-in-95 duration-150"
               >
-                <div className="flex items-center justify-between text-xs font-['Rajdhani'] font-bold">
-                  <span className="flex items-center gap-1.5 uppercase tracking-wider text-cyan-300">
-                    <Sliders className="w-3.5 h-3.5 text-cyan-400" />
-                    3D Türkiye Dış Kaide
+                {/* Header with Tabs */}
+                <div className="flex items-center justify-between pb-2 border-b border-cyan-500/30">
+                  <span className="text-xs font-['Orbitron'] font-bold text-transparent bg-clip-text bg-gradient-to-r from-white to-cyan-300 uppercase">
+                    3B HARİTA AYARLARI
                   </span>
-                  <span className="font-mono bg-cyan-950/80 text-cyan-300 px-2 py-0.5 border border-cyan-500/30 rounded-xs text-[11px] font-bold">
-                    {extrudeDepth.toFixed(1)}x
-                  </span>
-                </div>
-
-                <p className="text-[11px] font-['Rajdhani'] text-slate-300 -mt-1">
-                  Türkiye&apos;nin en dış kıyı ve kara sınırlarının 3D derinlik boyutu:
-                </p>
-
-                {/* Minimalist Slider */}
-                <div className="py-1">
-                  <input
-                    type="range"
-                    min="0.2"
-                    max="3.5"
-                    step="0.05"
-                    value={extrudeDepth}
-                    onChange={(e) => setExtrudeDepth(parseFloat(e.target.value))}
-                    className="w-full h-2 rounded-full appearance-none cursor-pointer focus:outline-none accent-cyan-500"
-                    style={{
-                      background: `linear-gradient(to right, #00f2fe 0%, #00f2fe ${((extrudeDepth - 0.2) / (3.5 - 0.2)) * 100}%, rgba(100, 116, 139, 0.4) ${((extrudeDepth - 0.2) / (3.5 - 0.2)) * 100}%, rgba(100, 116, 139, 0.4) 100%)`
-                    }}
-                  />
-                  <div className="flex justify-between items-center text-[10px] font-mono text-slate-400 mt-1">
-                    <span>0.2x (İnce Kaide)</span>
-                    <span>0.7x (Varsayılan)</span>
-                    <span>3.5x (Yüksek 3D Blok)</span>
-                  </div>
-                </div>
-
-                {/* Extrude Side Wall Light Color Options */}
-                <div className="pt-2 border-t border-cyan-500/20">
-                  <span className="text-[11px] font-['Rajdhani'] font-bold text-slate-300 block mb-1.5">
-                    Kaide Açık Rengi:
-                  </span>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {(Object.keys(EXTRUDE_WALL_COLORS) as ExtrudeWallColorType[]).map((clrKey) => (
-                      <button
-                        key={clrKey}
-                        onClick={() => setExtrudeWallColor(clrKey)}
-                        className={`flex items-center gap-1.5 px-2 py-1 text-[11px] font-['Rajdhani'] font-bold rounded-xs border transition-colors ${
-                          extrudeWallColor === clrKey
-                            ? 'bg-cyan-500/30 border-cyan-400 text-white'
-                            : 'bg-[#0f2444] border-cyan-500/20 text-slate-300 hover:text-white'
-                        }`}
-                      >
-                        <span 
-                          className="w-2.5 h-2.5 rounded-full border border-black/40 shadow-xs" 
-                          style={{ backgroundColor: '#' + EXTRUDE_WALL_COLORS[clrKey].hex.toString(16).padStart(6, '0') }} 
-                        />
-                        <span>{EXTRUDE_WALL_COLORS[clrKey].name.split('/')[0]}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Quick Presets */}
-                <div className="grid grid-cols-3 gap-1 pt-1.5 border-t border-cyan-500/20">
-                  {[
-                    { label: 'Hafif 0.4x', val: 0.4 },
-                    { label: 'Varsayılan 0.7x', val: 0.7 },
-                    { label: 'Yüksek 2.0x', val: 2.0 }
-                  ].map((preset) => (
+                  <div className="flex items-center bg-[#030919] p-0.5 rounded border border-cyan-500/40 text-[10px] font-['Rajdhani'] font-bold">
                     <button
-                      key={preset.val}
-                      onClick={() => setExtrudeDepth(preset.val)}
-                      className={`py-1 text-[11px] font-['Rajdhani'] font-bold rounded-xs transition-colors ${
-                        Math.abs(extrudeDepth - preset.val) < 0.1
-                          ? 'bg-cyan-500 text-slate-950 font-bold'
-                          : 'bg-[#0f2444] border border-cyan-500/20 text-cyan-300 hover:text-white'
+                      onClick={() => setSettingsTab('extrude')}
+                      className={`px-2 py-0.5 rounded-xs transition-all ${
+                        settingsTab === 'extrude' ? 'bg-cyan-500 text-slate-950 font-black' : 'text-slate-300 hover:text-white'
                       }`}
                     >
-                      {preset.label}
+                      KAİDE
                     </button>
-                  ))}
+                    <button
+                      onClick={() => setSettingsTab('billboard')}
+                      className={`px-2 py-0.5 rounded-xs transition-all ${
+                        settingsTab === 'billboard' ? 'bg-amber-400 text-slate-950 font-black' : 'text-slate-300 hover:text-white'
+                      }`}
+                    >
+                      VERİ ETİKETİ
+                    </button>
+                  </div>
                 </div>
+
+                {/* Tab 1: 3D Kaide & Kabartma */}
+                {settingsTab === 'extrude' && (
+                  <div className="flex flex-col gap-2.5">
+                    <div className="flex items-center justify-between text-xs font-['Rajdhani'] font-bold">
+                      <span className="flex items-center gap-1.5 uppercase tracking-wider text-cyan-300">
+                        <Layers className="w-3.5 h-3.5 text-cyan-400" />
+                        3D Dış Sınır Kabartması
+                      </span>
+                      <span className="font-mono bg-cyan-950/80 text-cyan-300 px-2 py-0.5 border border-cyan-500/30 rounded-xs text-[11px] font-bold">
+                        {extrudeDepth.toFixed(1)}x
+                      </span>
+                    </div>
+
+                    {/* Minimalist Slider */}
+                    <div className="py-0.5">
+                      <input
+                        type="range"
+                        min="0.2"
+                        max="3.5"
+                        step="0.05"
+                        value={extrudeDepth}
+                        onChange={(e) => setExtrudeDepth(parseFloat(e.target.value))}
+                        className="w-full h-2 rounded-full appearance-none cursor-pointer focus:outline-none accent-cyan-500"
+                        style={{
+                          background: `linear-gradient(to right, #00f2fe 0%, #00f2fe ${((extrudeDepth - 0.2) / (3.5 - 0.2)) * 100}%, rgba(100, 116, 139, 0.4) ${((extrudeDepth - 0.2) / (3.5 - 0.2)) * 100}%, rgba(100, 116, 139, 0.4) 100%)`
+                        }}
+                      />
+                      <div className="flex justify-between items-center text-[10px] font-mono text-slate-400 mt-1">
+                        <span>0.2x İnce</span>
+                        <span>0.7x Standart</span>
+                        <span>3.5x Blok</span>
+                      </div>
+                    </div>
+
+                    {/* Presets */}
+                    <div className="grid grid-cols-3 gap-1 pt-1 border-t border-cyan-500/20">
+                      {[
+                        { label: 'Hafif 0.4x', val: 0.4 },
+                        { label: 'Standart 0.7x', val: 0.7 },
+                        { label: 'Yüksek 2.0x', val: 2.0 }
+                      ].map((preset) => (
+                        <button
+                          key={preset.val}
+                          onClick={() => setExtrudeDepth(preset.val)}
+                          className={`py-1 text-[11px] font-['Rajdhani'] font-bold rounded-xs transition-colors ${
+                            Math.abs(extrudeDepth - preset.val) < 0.1
+                              ? 'bg-cyan-500 text-slate-950 font-bold'
+                              : 'bg-[#0f2444] border border-cyan-500/20 text-cyan-300 hover:text-white'
+                          }`}
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Extrude Side Wall Color Options */}
+                    <div className="pt-2 border-t border-cyan-500/20">
+                      <span className="text-[11px] font-['Rajdhani'] font-bold text-slate-300 block mb-1.5">
+                        Kaide Duvar Rengi:
+                      </span>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {(Object.keys(EXTRUDE_WALL_COLORS) as ExtrudeWallColorType[]).map((clrKey) => (
+                          <button
+                            key={clrKey}
+                            onClick={() => setExtrudeWallColor(clrKey)}
+                            className={`flex items-center gap-1.5 px-2 py-1 text-[11px] font-['Rajdhani'] font-bold rounded-xs border transition-colors ${
+                              extrudeWallColor === clrKey
+                                ? 'bg-cyan-500/30 border-cyan-400 text-white'
+                                : 'bg-[#0f2444] border-cyan-500/20 text-slate-300 hover:text-white'
+                            }`}
+                          >
+                            <span 
+                              className="w-2.5 h-2.5 rounded-full border border-black/40 shadow-xs" 
+                              style={{ backgroundColor: '#' + EXTRUDE_WALL_COLORS[clrKey].hex.toString(16).padStart(6, '0') }} 
+                            />
+                            <span>{EXTRUDE_WALL_COLORS[clrKey].name.split('/')[0]}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tab 2: Veri Etiketi Tasarımı */}
+                {settingsTab === 'billboard' && (
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-[11px] font-['Rajdhani'] font-bold text-amber-300 block">
+                      3B Harita Veri Etiketi Tasarımı:
+                    </span>
+                    {BILLBOARD_STYLE_OPTIONS.map((opt) => {
+                      const isSelected = mapBillboardStyle === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          onClick={() => handleSelectBillboardStyle(opt.id)}
+                          className={`flex items-start gap-2 p-2 rounded-xs text-left transition-all ${
+                            isSelected
+                              ? 'bg-amber-500/20 border border-amber-400 text-white shadow-[0_0_12px_rgba(245,158,11,0.3)]'
+                              : 'bg-[#0a1c38]/60 border border-transparent hover:bg-cyan-950/80 hover:border-amber-500/40 text-slate-300 hover:text-white'
+                          }`}
+                        >
+                          <div className={`p-1.5 rounded-xs mt-0.5 shrink-0 ${isSelected ? 'bg-amber-400 text-slate-950' : 'bg-cyan-950 text-amber-400 border border-amber-500/30'}`}>
+                            {opt.id === 'capsule' ? (
+                              <Compass className="w-3.5 h-3.5" />
+                            ) : opt.id === 'terminal' ? (
+                              <Crosshair className="w-3.5 h-3.5" />
+                            ) : (
+                              <Layers className="w-3.5 h-3.5" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="font-['Rajdhani'] font-bold text-xs text-slate-100">
+                                {opt.label}
+                              </span>
+                              <span className={`text-[9px] font-mono px-1 py-0.2 rounded border shrink-0 ${
+                                isSelected ? 'bg-amber-400/20 text-amber-300 border-amber-400' : 'bg-cyan-950/90 text-cyan-300 border-cyan-500/30'
+                              }`}>
+                                {opt.badge}
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-slate-300 font-['Rajdhani'] leading-tight mt-0.5">
+                              {opt.desc}
+                            </p>
+                          </div>
+                          {isSelected && <Check className="w-4 h-4 text-amber-400 shrink-0 mt-1" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </div>
 
-          {/* 3D Map Billboard Style Selector */}
-          <div className="relative">
-            <button
-              onClick={() => setIsPresentationOpen(!isPresentationOpen)}
-              className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-['Rajdhani'] font-bold rounded-xs transition-all ${
-                isPresentationOpen
-                  ? 'bg-amber-400 text-slate-950 shadow-[0_0_12px_#f59e0b]'
-                  : 'text-amber-300 hover:text-white bg-amber-400/10 border border-amber-400/40 hover:bg-amber-400/20'
-              }`}
-              title="Harita 3B Veri Kartı & Etiket Tasarımı"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span className="hidden sm:inline font-mono text-[10px] text-amber-200/80 uppercase">VERİ ETİKETİ:</span>
-              <span className="font-bold text-slate-100">
-                {BILLBOARD_STYLE_OPTIONS.find((p) => p.id === mapBillboardStyle)?.label}
-              </span>
-              <ChevronDown className={`w-3 h-3 text-amber-400 transition-transform ${isPresentationOpen ? 'rotate-180' : ''}`} />
-            </button>
+          <div className="h-4 w-[1px] bg-cyan-500/30 mx-0.5" />
 
-            {isPresentationOpen && (
-              <div
-                ref={presentationPopoverRef}
-                className="absolute top-full right-0 mt-2 z-50 w-80 p-2.5 bg-[#071328]/98 backdrop-blur-xl border border-amber-400/60 shadow-[0_8px_32px_rgba(0,0,0,0.7)] rounded-xs flex flex-col gap-1.5 select-none text-white animate-in fade-in zoom-in-95 duration-150"
-              >
-                <div className="flex items-center justify-between pb-1.5 border-b border-amber-500/30 text-xs font-['Rajdhani'] font-bold">
-                  <span className="flex items-center gap-1.5 uppercase text-amber-300">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                    Harita Veri Gösterim Tasarımı
-                  </span>
-                  <span className="font-mono text-[10px] text-slate-400">3 FARKLI TASARIM</span>
-                </div>
-
-                <div className="flex flex-col gap-1.5 pt-1">
-                  {BILLBOARD_STYLE_OPTIONS.map((opt) => {
-                    const isSelected = mapBillboardStyle === opt.id;
-                    return (
-                      <button
-                        key={opt.id}
-                        onClick={() => handleSelectBillboardStyle(opt.id)}
-                        className={`flex items-start gap-2.5 p-2 rounded-xs text-left transition-all ${
-                          isSelected
-                            ? 'bg-amber-500/20 border border-amber-400 text-white shadow-[0_0_12px_rgba(245,158,11,0.3)]'
-                            : 'bg-[#0a1c38]/60 border border-transparent hover:bg-cyan-950/80 hover:border-amber-500/40 text-slate-300 hover:text-white'
-                        }`}
-                      >
-                        <div className={`p-1.5 rounded-xs mt-0.5 shrink-0 ${isSelected ? 'bg-amber-400 text-slate-950' : 'bg-cyan-950 text-amber-400 border border-amber-500/30'}`}>
-                          {opt.id === 'capsule' ? (
-                            <Compass className="w-3.5 h-3.5" />
-                          ) : opt.id === 'terminal' ? (
-                            <Crosshair className="w-3.5 h-3.5" />
-                          ) : (
-                            <Layers className="w-3.5 h-3.5" />
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-1">
-                            <span className="font-['Rajdhani'] font-bold text-xs text-slate-100">
-                              {opt.label}
-                            </span>
-                            <span className={`text-[9px] font-mono px-1 py-0.2 rounded border shrink-0 ${
-                              isSelected ? 'bg-amber-400/20 text-amber-300 border-amber-400' : 'bg-cyan-950/90 text-cyan-300 border-cyan-500/30'
-                            }`}>
-                              {opt.badge}
-                            </span>
-                          </div>
-                          <p className="text-[10px] text-slate-300 font-['Rajdhani'] leading-tight mt-0.5">
-                            {opt.desc}
-                          </p>
-                          <div className="text-[9px] font-mono text-cyan-400/80 mt-1">
-                            Özellik: {opt.preview}
-                          </div>
-                        </div>
-                        {isSelected && <Check className="w-4 h-4 text-amber-400 shrink-0 mt-1" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-
+          {/* Camera Reset */}
           <button
             onClick={resetCamera}
-            className="flex items-center gap-1 px-2 py-1 text-xs font-['Rajdhani'] font-bold rounded transition-colors hover:text-white hover:bg-cyan-500/20 text-cyan-300"
+            className="flex items-center gap-1 px-2 py-1 text-xs font-['Rajdhani'] font-bold rounded-xs transition-colors hover:text-white hover:bg-cyan-500/20 text-cyan-300"
             title="Kamera Açısını Sıfırla (Perspektif)"
           >
             <RotateCcw className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="hidden sm:inline">SIFIRLA</span>
+            <span className="hidden xl:inline">SIFIRLA</span>
           </button>
 
+          {/* Top-Down View */}
           <button
             onClick={setTopDownView}
-            className="flex items-center gap-1 px-2 py-1 text-xs font-['Rajdhani'] font-bold rounded transition-colors hover:text-white hover:bg-cyan-500/20 text-cyan-300"
+            className="flex items-center gap-1 px-2 py-1 text-xs font-['Rajdhani'] font-bold rounded-xs transition-colors hover:text-white hover:bg-cyan-500/20 text-cyan-300"
             title="Kuşbakışı (2D/3D Dik Açı) Görünüme Geç"
           >
             <Compass className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="hidden sm:inline">DİK AÇI</span>
+            <span className="hidden xl:inline">DİK AÇI</span>
           </button>
 
+          {/* PNG Export */}
+          <button
+            onClick={exportMapPNG}
+            className="flex items-center gap-1 px-2 py-1 text-xs font-['Rajdhani'] font-bold rounded-xs transition-colors hover:text-white hover:bg-cyan-500/20 text-cyan-300"
+            title="Google Earth 3D Harita Görüntüsünü PNG Olarak İndir"
+          >
+            <Camera className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="hidden xl:inline">PNG</span>
+          </button>
+
+          <div className="h-4 w-[1px] bg-cyan-500/30 mx-0.5" />
+
+          {/* Guide Modal Trigger */}
           <button
             onClick={() => setIsDetailedGuideOpen(true)}
-            className="flex items-center gap-1 px-2 py-1 text-xs font-['Rajdhani'] font-bold rounded transition-colors hover:text-white hover:bg-cyan-500/20 text-cyan-300"
+            className="flex items-center gap-1 px-2 py-1 text-xs font-['Rajdhani'] font-bold rounded-xs transition-colors hover:text-white hover:bg-cyan-500/20 text-cyan-300"
             title="3B Harita Fare & Navigasyon Kullanım Rehberi"
           >
             <Mouse className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="hidden sm:inline">KULLANIM</span>
+            <span className="hidden xl:inline">REHBER</span>
           </button>
         </div>
 
         {/* Live Kiosk Transition & Countdown Pill under right menu */}
         {isAutoPlay && (
-          <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-xs bg-[#05132d]/95 backdrop-blur-xl border border-cyan-400/50 shadow-[0_6px_24px_rgba(0,0,0,0.65)] select-none animate-in fade-in slide-in-from-top-2 duration-200">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 px-2.5 py-1 rounded-xs bg-[#05132d]/95 backdrop-blur-xl border border-cyan-400/50 shadow-[0_4px_16px_rgba(0,0,0,0.65)] select-none animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="flex items-center gap-1.5">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
               </span>
-              <span className="font-['Rajdhani'] font-bold text-xs tracking-wider text-white uppercase drop-shadow-[0_0_8px_rgba(0,242,254,0.4)] whitespace-nowrap">
+              <span className="font-['Rajdhani'] font-bold text-[11px] tracking-wider text-white uppercase drop-shadow-[0_0_8px_rgba(0,242,254,0.4)] whitespace-nowrap">
                 {autoPlayStepTitle || 'CANLI SUNUM'}
               </span>
             </div>
             
-            {/* Progress Bar (cyan to amber gradient) */}
-            <div className="w-20 sm:w-24 h-2 bg-[#020712] rounded-full overflow-hidden border border-cyan-500/40 p-[1px] shadow-inner shrink-0">
+            {/* Progress Bar */}
+            <div className="w-16 sm:w-20 h-1.5 bg-[#020712] rounded-full overflow-hidden border border-cyan-500/40 p-[1px] shadow-inner shrink-0">
               <div 
                 className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-sky-300 to-amber-400 transition-all duration-100 ease-linear shadow-[0_0_8px_rgba(0,242,254,0.6)]"
                 style={{ width: `${Math.min(100, Math.max(0, autoPlayProgress || 0))}%` }}
@@ -2743,196 +3293,87 @@ export const TurkeyMap3D: React.FC<TurkeyMap3DProps> = ({
         )}
       </div>
 
-      {/* Floating Hover Info Card Synchronized with Selected Billboard Style */}
+      {/* Floating Hover Info Card with Maximum Vibrancy and High Contrast */}
       {hoveredInfo && (() => {
-        const rankData = provinceRanks.get(hoveredInfo.code);
-        const overview = getProvinceOverview(hoveredInfo.code);
-        const cardWidth = mapBillboardStyle === 'terminal' ? 320 : mapBillboardStyle === 'capsule' ? 280 : 210;
+        const cardWidth = hoveredInfo.isRegion ? 320 : 280;
         const clampedX = Math.min(window.innerWidth - cardWidth / 2 - 16, Math.max(cardWidth / 2 + 16, hoveredInfo.x));
         const clampedY = Math.max(130, hoveredInfo.y);
+        const rankData = hoveredInfo.isRegion 
+          ? regionRanks.get(hoveredInfo.code)
+          : provinceRanks.get(hoveredInfo.code);
 
-        // OPTION 1: KLASİK SİBER HUD
-        if (mapBillboardStyle === 'classic') {
-          return (
-            <div
-              className="fixed pointer-events-none z-50 p-2.5 rounded shadow-2xl backdrop-blur-md border border-cyan-400 bg-[#040e20]/95 text-white text-xs font-['Rajdhani'] transition-transform transform -translate-x-1/2 -translate-y-full -mt-3 select-none shadow-[0_0_20px_rgba(0,242,254,0.35)]"
-              style={{ left: `${clampedX}px`, top: `${clampedY}px` }}
-            >
-              <div className="flex items-center gap-2 font-bold text-sm tracking-wider">
-                <span className="text-cyan-400 font-mono">#{hoveredInfo.code}</span>
-                <span className="text-white">{hoveredInfo.name.toUpperCase()}</span>
-                {hoveredInfo.agency && (
-                  <span className="text-[10px] px-1.5 py-0.5 bg-cyan-950 text-cyan-300 border border-cyan-500/40 rounded-xs">
-                    {hoveredInfo.agency}
-                  </span>
-                )}
-              </div>
-              <div className="mt-1 flex items-center justify-between gap-4 font-mono text-[11px]">
-                <span className="text-slate-400">{getCategoryLabel(activeMetric)}:</span>
-                <span className="text-amber-400 font-bold">
-                  {formatMetricDisplay(activeMetric, hoveredInfo.value)}
-                </span>
-              </div>
-            </div>
-          );
-        }
-
-        // OPTION 2: HOLO-KAPSÜL CAM
-        if (mapBillboardStyle === 'capsule') {
-          return (
-            <div
-              className="fixed pointer-events-none z-50 p-3 rounded-2xl shadow-[0_0_30px_rgba(0,242,254,0.4)] backdrop-blur-xl border border-cyan-400/80 bg-[#030d22]/95 text-white text-xs font-['Rajdhani'] transition-transform transform -translate-x-1/2 -translate-y-full -mt-4 select-none w-72"
-              style={{ left: `${clampedX}px`, top: `${clampedY}px` }}
-            >
-              {/* Tactical Corner Brackets */}
-              <span className="absolute -top-1 -left-1 w-2.5 h-2.5 border-t-2 border-l-2 border-cyan-400 shadow-[0_0_8px_#00f2fe]" />
-              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 border-t-2 border-r-2 border-cyan-400 shadow-[0_0_8px_#00f2fe]" />
-              <span className="absolute -bottom-1 -left-1 w-2.5 h-2.5 border-b-2 border-l-2 border-cyan-400 shadow-[0_0_8px_#00f2fe]" />
-              <span className="absolute -bottom-1 -right-1 w-2.5 h-2.5 border-b-2 border-r-2 border-cyan-400 shadow-[0_0_8px_#00f2fe]" />
-
-              {/* Top Status Header */}
-              <div className="flex items-center justify-between border-b border-cyan-500/30 pb-1.5 mb-2 font-mono text-[10px]">
-                <div className="flex items-center gap-1.5 text-cyan-300 font-bold">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                  <span>HOLO-KAPSÜL: #{hoveredInfo.code}</span>
-                </div>
-                {rankData && (
-                  <span className="bg-cyan-950/90 text-cyan-300 px-1.5 py-0.2 rounded border border-cyan-500/40 font-bold">
-                    TR #{rankData.rank} / {rankData.total}
-                  </span>
-                )}
-              </div>
-
-              {/* Province Title & Agency */}
-              <div className="flex items-baseline justify-between gap-2">
-                <h4 className="font-['Orbitron'] font-bold text-base tracking-wider text-white uppercase drop-shadow-[0_0_8px_rgba(0,242,254,0.5)]">
-                  {hoveredInfo.name}
-                </h4>
-                {hoveredInfo.agency && (
-                  <span className="text-[10px] font-mono text-cyan-400/90 tracking-wider">
-                    [{hoveredInfo.agency}]
-                  </span>
-                )}
-              </div>
-
-              {/* Active Metric Spotlight */}
-              <div className="mt-2 p-1.5 rounded-xs bg-[#061633]/85 border border-cyan-500/30 flex items-center justify-between">
-                <span className="text-slate-300 font-bold text-[11px] truncate max-w-[130px]">
-                  {getCategoryLabel(activeMetric)}:
-                </span>
-                <span className="font-['Orbitron'] font-bold text-sm text-amber-400 tracking-wide">
-                  {formatMetricDisplay(activeMetric, hoveredInfo.value)}
-                </span>
-              </div>
-
-              {/* Telemetry Scale Meter */}
-              {rankData && (
-                <div className="mt-2 space-y-1">
-                  <div className="flex justify-between items-center text-[10px] font-mono text-slate-400">
-                    <span>ULUSAL KALİBRASYON</span>
-                    <span className="text-cyan-300 font-bold">
-                      %{Math.round((hoveredInfo.value / rankData.maxVal) * 100)} ZİRVE PAYI
-                    </span>
-                  </div>
-                  <div className="w-full h-1.5 bg-[#020817] rounded-full overflow-hidden border border-cyan-500/30 p-[1px]">
-                    <div 
-                      className="h-full rounded-full bg-gradient-to-r from-cyan-500 via-sky-300 to-amber-400 shadow-[0_0_6px_#00f2fe]"
-                      style={{ width: `${Math.min(100, Math.max(3, (hoveredInfo.value / rankData.maxVal) * 100))}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        }
-
-        // OPTION 3: TAKTİK KOMUTA TERMİNALİ (Executive Çok Boyutlu Telemetri)
         return (
           <div
-            className="fixed pointer-events-none z-50 p-3 rounded-xs shadow-[0_12px_40px_rgba(0,0,0,0.85)] backdrop-blur-2xl border border-cyan-400/80 bg-[#051126]/98 text-white text-xs font-['Rajdhani'] transition-transform transform -translate-x-1/2 -translate-y-full -mt-4 select-none w-80 shadow-[0_0_35px_rgba(0,242,254,0.45)]"
+            className={`fixed pointer-events-none z-50 px-4 py-3 rounded-lg border-2 ${
+              hoveredInfo.isRegion ? 'border-amber-400 bg-[#030d22]' : 'border-cyan-400 bg-[#020a1c]'
+            } text-white font-['Rajdhani'] transition-transform transform -translate-x-1/2 -translate-y-full -mt-4 select-none ${
+              hoveredInfo.isRegion 
+                ? 'shadow-[0_0_35px_rgba(245,158,11,0.65),inset_0_0_15px_rgba(245,158,11,0.18)] min-w-[280px]'
+                : 'shadow-[0_0_35px_rgba(0,242,254,0.75),inset_0_0_15px_rgba(0,242,254,0.18)] min-w-[260px]'
+            }`}
             style={{ left: `${clampedX}px`, top: `${clampedY}px` }}
           >
-            {/* Top Holographic Header Bar */}
-            <div className="flex items-center justify-between border-b border-cyan-500/30 pb-2 mb-2">
+            {/* Top Glowing Beam Accent */}
+            <div className={`absolute -top-[2px] left-4 right-4 h-[2px] bg-gradient-to-r from-transparent ${
+              hoveredInfo.isRegion ? 'via-amber-300' : 'via-cyan-300'
+            } to-transparent shadow-[0_0_10px_#00f2fe]`} />
+
+            {/* Top row: #Code City/Region & National Rank */}
+            <div className="flex items-center justify-between gap-3 font-bold">
               <div className="flex items-center gap-2">
-                <span className="font-mono text-xs px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-500/40 font-bold">
+                <span className={`px-2 py-0.5 rounded-xs ${
+                  hoveredInfo.isRegion 
+                    ? 'bg-amber-500/25 border border-amber-400 text-amber-300 drop-shadow-[0_0_10px_rgba(245,158,11,0.7)]'
+                    : 'bg-cyan-500/25 border border-cyan-400 text-cyan-300 drop-shadow-[0_0_10px_rgba(0,242,254,0.7)]'
+                } font-mono text-sm font-black`}>
                   #{hoveredInfo.code}
                 </span>
-                <div>
-                  <h4 className="font-['Orbitron'] font-black text-sm tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-white via-cyan-100 to-cyan-300 uppercase">
-                    {hoveredInfo.name}
-                  </h4>
-                  <div className="text-[10px] text-cyan-400/80 font-mono">
-                    {hoveredInfo.agency ? `KALKINMA AJANSI: ${hoveredInfo.agency}` : 'TÜRKİYE BÖLGESİ'}
+                <span className="text-white text-base tracking-wide font-black drop-shadow-[0_0_8px_rgba(255,255,255,0.4)]">
+                  {hoveredInfo.isRegion 
+                    ? (hoveredInfo.shortCode ? `${hoveredInfo.shortCode} BÖLGESİ` : hoveredInfo.name.toUpperCase())
+                    : hoveredInfo.name.toUpperCase()}
+                </span>
+              </div>
+              {rankData && (
+                <span className={`text-[10px] font-mono px-2 py-0.5 rounded-xs font-black uppercase tracking-wider border shadow-xs ${
+                  rankData.rank === 1
+                    ? 'bg-amber-400/30 text-amber-300 border-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.6)]'
+                    : 'bg-cyan-950/90 text-cyan-300 border-cyan-400/60'
+                }`}>
+                  {rankData.rank === 1 
+                    ? (hoveredInfo.isRegion ? '★ BÖLGESEL ZİRVE' : '★ ULUSAL ZİRVE') 
+                    : (hoveredInfo.isRegion ? `TR #${rankData.rank} / 26` : `TR #${rankData.rank}`)}
+                </span>
+              )}
+            </div>
+
+            {/* If region, display Agency Name and Member Provinces */}
+            {hoveredInfo.isRegion && (
+              <div className="mt-1 flex flex-col gap-0.5 text-[11px] font-mono">
+                <div className="text-amber-200/90 font-bold truncate">
+                  🏛️ {hoveredInfo.agency}
+                </div>
+                {hoveredInfo.memberCities && (
+                  <div className="text-slate-300 text-[10px] truncate">
+                    İller: <span className="text-cyan-300">{hoveredInfo.memberCities}</span>
                   </div>
-                </div>
-              </div>
-
-              {rankData && (
-                <div className="text-right">
-                  <span className={`inline-flex items-center gap-1 font-['Orbitron'] text-[11px] font-bold px-2 py-0.5 rounded border ${
-                    rankData.rank === 1
-                      ? 'bg-amber-500/20 text-amber-300 border-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.4)]'
-                      : rankData.rank <= 3
-                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-400 shadow-[0_0_8px_rgba(0,242,254,0.3)]'
-                      : 'bg-[#0a1a36] text-slate-300 border-cyan-500/20'
-                  }`}>
-                    {rankData.rank === 1 ? '🏆 TR #1' : `TR #${rankData.rank}`}
-                  </span>
-                  <div className="text-[9px] font-mono text-slate-400 mt-0.5">81 İL İÇİNDE</div>
-                </div>
-              )}
-            </div>
-
-            {/* Primary Metric Spotlight Hero Box */}
-            <div className="p-2 rounded bg-gradient-to-r from-[#091e42] to-[#040e24] border border-cyan-500/40 flex items-center justify-between mb-2 shadow-inner">
-              <div>
-                <span className="text-[10px] font-mono uppercase text-cyan-300 block">
-                  {getCategoryLabel(activeMetric)}
-                </span>
-                <span className="font-['Orbitron'] font-bold text-base text-amber-300 drop-shadow-[0_0_6px_rgba(245,158,11,0.5)]">
-                  {formatMetricDisplay(activeMetric, hoveredInfo.value)}
-                </span>
-              </div>
-              {rankData && (
-                <div className="text-right font-mono text-[10px] text-slate-300">
-                  <span className="text-cyan-400 font-bold block">İLK %{rankData.topPct}</span>
-                  <span className="opacity-70">DİLİMİNDE</span>
-                </div>
-              )}
-            </div>
-
-            {/* 3-Column Micro Telemetry Strip (Population, GDP, SES) */}
-            {overview && (
-              <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-cyan-500/20 text-center font-mono">
-                <div className="bg-[#071733]/80 p-1.5 rounded-xs border border-cyan-500/20">
-                  <span className="text-[9px] text-slate-400 block font-['Rajdhani'] font-bold">NÜFUS</span>
-                  <span className="text-[11px] font-bold text-white">
-                    {(overview.population / 1000000).toFixed(2)}M
-                  </span>
-                </div>
-                <div className="bg-[#071733]/80 p-1.5 rounded-xs border border-cyan-500/20">
-                  <span className="text-[9px] text-slate-400 block font-['Rajdhani'] font-bold">GSYH / KİŞİ</span>
-                  <span className="text-[11px] font-bold text-amber-300">
-                    ${overview.gdpPerCapitaUsd.toLocaleString()}
-                  </span>
-                </div>
-                <div className="bg-[#071733]/80 p-1.5 rounded-xs border border-cyan-500/20">
-                  <span className="text-[9px] text-slate-400 block font-['Rajdhani'] font-bold">SEGE SKORU</span>
-                  <span className="text-[11px] font-bold text-cyan-300">
-                    {overview.sesScore}
-                  </span>
-                </div>
+                )}
               </div>
             )}
 
-            {/* Interactive Hint */}
-            <div className="mt-2 text-[10px] font-['Rajdhani'] text-cyan-400/90 flex items-center justify-between border-t border-cyan-500/20 pt-1.5">
-              <span className="flex items-center gap-1 font-bold">
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                İl Karnesini Açmak İçin Haritaya Tıklayın
+            {/* High-Tech Glowing Divider Line */}
+            <div className={`my-2 h-[1px] bg-gradient-to-r from-cyan-500/30 ${
+              hoveredInfo.isRegion ? 'via-amber-400/70' : 'via-cyan-400/70'
+            } to-cyan-500/30 shadow-[0_0_6px_rgba(0,242,254,0.4)]`} />
+
+            {/* Bottom row: Category Metric: Value */}
+            <div className="flex items-center justify-between gap-4 font-mono">
+              <span className="text-cyan-200/90 font-bold text-xs uppercase tracking-wider whitespace-nowrap">
+                {getCategoryLabel(activeMetric)}:
               </span>
-              <span className="font-mono text-cyan-300 text-[11px]">➔</span>
+              <span className="text-amber-300 font-black text-base tracking-wide whitespace-nowrap drop-shadow-[0_0_12px_rgba(251,191,36,0.9)]">
+                {formatMetricDisplay(activeMetric, hoveredInfo.value)}
+              </span>
             </div>
           </div>
         );

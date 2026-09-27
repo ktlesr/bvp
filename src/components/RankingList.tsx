@@ -1,21 +1,39 @@
 import React from 'react';
-import { PROVINCE_CODES } from '../data/regions';
-import { MapMetricType, computeProvinceMetric, formatMetricDisplay } from '../data/metricCatalog';
+import { PROVINCE_CODES, REGIONS, PROVINCE_TO_CODE } from '../data/regions';
+import { MapMetricType, computeProvinceMetric, computeRegionMetric, formatMetricDisplay } from '../data/metricCatalog';
 
 interface RankingListProps {
   activeMetric: MapMetricType;
   selectedProvinceCode: string;
   onSelectProvince: (code: string) => void;
+  mapLevel?: 'province' | 'region';
+  selectedRegionCode?: string;
+  onSelectRegion?: (code: string) => void;
 }
 
 export const RankingList: React.FC<RankingListProps> = ({
   activeMetric,
   selectedProvinceCode,
-  onSelectProvince
+  onSelectProvince,
+  mapLevel = 'province',
+  selectedRegionCode,
+  onSelectRegion
 }) => {
-  // Compute metric for all 81 provinces
+  // Compute metric for all 81 provinces or 26 regions
   const rankings = React.useMemo(() => {
-    const list: { code: string; name: string; value: number }[] = [];
+    if (mapLevel === 'region') {
+      const list = REGIONS.map((r) => ({
+        code: r.code,
+        name: `${r.shortCode} · ${r.level1Name}`,
+        sub: r.provinces.slice(0, 2).join(', ') + (r.provinces.length > 2 ? '..' : ''),
+        value: computeRegionMetric(r.code, activeMetric),
+        primaryProvinceCode: PROVINCE_TO_CODE[r.provinces[0]] || '1'
+      }));
+      list.sort((a, b) => b.value - a.value);
+      return list;
+    }
+
+    const list: { code: string; name: string; sub?: string; value: number; primaryProvinceCode?: string }[] = [];
     for (let i = 1; i <= 81; i++) {
       const code = String(i);
       const value = computeProvinceMetric(code, activeMetric);
@@ -29,7 +47,7 @@ export const RankingList: React.FC<RankingListProps> = ({
     // Sort descending
     list.sort((a, b) => b.value - a.value);
     return list;
-  }, [activeMetric]);
+  }, [activeMetric, mapLevel]);
 
   const top10 = rankings.slice(0, 8);
   const maxVal = top10[0]?.value || 1;
@@ -41,13 +59,22 @@ export const RankingList: React.FC<RankingListProps> = ({
   return (
     <div className="flex flex-col gap-2 h-full justify-between">
       {top10.map((item, idx) => {
-        const isSelected = item.code === selectedProvinceCode;
+        const isSelected = mapLevel === 'region' 
+          ? item.code === selectedRegionCode
+          : item.code === selectedProvinceCode;
         const pct = Math.min(100, Math.max(8, (item.value / maxVal) * 100));
 
         return (
           <div
             key={item.code}
-            onClick={() => onSelectProvince(item.code)}
+            onClick={() => {
+              if (mapLevel === 'region') {
+                if (onSelectRegion) onSelectRegion(item.code);
+                if (item.primaryProvinceCode) onSelectProvince(item.primaryProvinceCode);
+              } else {
+                onSelectProvince(item.code);
+              }
+            }}
             className={`flex items-center gap-2 p-1.5 rounded-xs cursor-pointer transition-all ${
               isSelected
                 ? 'bg-cyan-950/80 border border-cyan-400'
@@ -93,3 +120,4 @@ export const RankingList: React.FC<RankingListProps> = ({
     </div>
   );
 };
+

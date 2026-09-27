@@ -2,6 +2,7 @@ import { getProvinceExport } from './tradeData';
 import { getProvinceOSB } from './osbData';
 import { getWomenShare } from './womenTradeData';
 import { getProvinceOverview } from './demographyData';
+import { REGIONS, PROVINCE_TO_CODE } from './regions';
 
 export type MapMetricType = 
   | 'export' 
@@ -126,9 +127,9 @@ export const METRIC_CATALOG: CatalogCategory[] = [
         id: 'ses',
         label: 'SEGE Gelişmişlik Endeksi',
         shortLabel: 'SEGE SKORU',
-        desc: 'Sanayi ve Teknoloji Bakanlığı İllerin SEGE Skoru',
+        desc: 'İllerin Sosyoekonomik Gelişmişlik Sıralaması (SEGE) Skoru',
         unit: 'Endeks Puanı',
-        badge: 'Kalkınma Ajansları'
+        badge: 'SEGE Endeksi'
       }
     ]
   },
@@ -233,6 +234,44 @@ export function computeProvinceMetric(code: string, metric: MapMetricType): numb
     default:
       return getProvinceExport(code, 3);
   }
+}
+
+// Calculate regional aggregate metric for 26 NUTS-2 (İBBS-2) regions
+export function computeRegionMetric(regionCode: string, metric: MapMetricType): number {
+  const reg = REGIONS.find((r) => r.code === regionCode);
+  if (!reg) return 0;
+  const pCodes = reg.provinces.map((p) => PROVINCE_TO_CODE[p]).filter(Boolean);
+  if (pCodes.length === 0) return 0;
+
+  // Additive / volume metrics
+  if (['export', 'osb', 'osb_area', 'osb_parsel', 'osb_active', 'population'].includes(metric)) {
+    return pCodes.reduce((sum, c) => sum + computeProvinceMetric(c, metric), 0);
+  }
+
+  // Export-weighted metrics (e.g. Women exporter share)
+  if (metric === 'women') {
+    let totalExp = 0;
+    let weightedExp = 0;
+    pCodes.forEach((c) => {
+      const exp = computeProvinceMetric(c, 'export');
+      const wShare = computeProvinceMetric(c, 'women');
+      totalExp += exp;
+      weightedExp += wShare * exp;
+    });
+    return totalExp > 0 ? weightedExp / totalExp : 0;
+  }
+
+  // Population-weighted average indicators (GDP per capita, SEGE, employment, etc.)
+  let totalPop = 0;
+  let weightedSum = 0;
+  pCodes.forEach((c) => {
+    const pop = computeProvinceMetric(c, 'population');
+    const val = computeProvinceMetric(c, metric);
+    totalPop += pop;
+    weightedSum += val * pop;
+  });
+
+  return totalPop > 0 ? weightedSum / totalPop : 0;
 }
 
 export function getCategoryLabel(metric: MapMetricType): string {
